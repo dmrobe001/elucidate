@@ -16,6 +16,8 @@ class Material(object):
             light and view angle.
 
         color ((3, ) `numpy.ndarray` of ``float32``)): Linear material color.
+            On a transmissive material this is also the color seen through one
+            `transmission_distance` of the interior.
 
         primitive_color_mix (float): Set to 1 to use the color provided in the
             `Geometry`, 0 to use the color specified in the `Material`, or a
@@ -33,6 +35,12 @@ class Material(object):
         ior (float): Index of refraction of the material's interior. 1.5 is
             typical for glass and 1.333 for water. Set to 1 to transmit light
             without bending it.
+
+        transmission_distance (float): Distance over which the interior of a
+            transmissive material absorbs light down to `color`. Twice this
+            distance squares the color, so thick parts of a solid render deeper
+            in color than thin ones. Raise it towards infinity for a material
+            that absorbs nothing.
 
         metal (float): Set to 0 for dielectric material, or 1 for metal.
             Intermediate values interpolate between the two.
@@ -52,8 +60,9 @@ class Material(object):
         rays, so it renders transmissive materials as opaque.
 
     Note:
-        Refraction assumes that a transmissive surface separates the material's
-        interior from air and that the geometry enclosing it is closed.
+        Refraction and absorption assume that a transmissive surface separates
+        the material's interior from air and that the geometry enclosing it is
+        closed.
         Transmissive objects that overlap one another, or that are built from
         open surfaces, are not handled: each interface is treated as though air
         lies on the other side of it.
@@ -68,6 +77,7 @@ class Material(object):
         specular=0.5,
         spec_trans=0,
         ior=1.5,
+        transmission_distance=1.0,
         metal=0,
     ):
         self._material = _common.Material()
@@ -79,6 +89,7 @@ class Material(object):
         self.metal = metal
         self.spec_trans = spec_trans
         self.ior = ior
+        self.transmission_distance = transmission_distance
         self.primitive_color_mix = primitive_color_mix
 
     @property
@@ -171,6 +182,20 @@ class Material(object):
     @ior.setter
     def ior(self, value):
         self._material.ior = float(value)
+
+    @property
+    def transmission_distance(self):
+        """float: Distance over which the interior absorbs light down to `color`.
+
+        Twice this distance squares the color, so thick parts of a solid render
+        deeper in color than thin ones. Raise it towards infinity for a
+        material that absorbs nothing.
+        """
+        return self._material.transmission_distance
+
+    @transmission_distance.setter
+    def transmission_distance(self, value):
+        self._material.transmission_distance = float(value)
 
     @property
     def metal(self):
@@ -280,6 +305,23 @@ class _MaterialProxy(object):
         self._geometry.setMaterial(m)
 
     @property
+    def transmission_distance(self):
+        """float: Distance over which the interior absorbs light down to `color`.
+
+        Twice this distance squares the color, so thick parts of a solid render
+        deeper in color than thin ones. Raise it towards infinity for a
+        material that absorbs nothing.
+        """
+        m = self._geometry.getMaterial()
+        return m.transmission_distance
+
+    @transmission_distance.setter
+    def transmission_distance(self, value):
+        m = self._geometry.getMaterial()
+        m.transmission_distance = float(value)
+        self._geometry.setMaterial(m)
+
+    @property
     def metal(self):
         m = self._geometry.getMaterial()
         return m.metal
@@ -383,6 +425,23 @@ class _OutlineMaterialProxy(object):
     def ior(self, value):
         m = self._geometry.getOutlineMaterial()
         m.ior = float(value)
+        self._geometry.setOutlineMaterial(m)
+
+    @property
+    def transmission_distance(self):
+        """float: Distance over which the interior absorbs light down to `color`.
+
+        Twice this distance squares the color, so thick parts of a solid render
+        deeper in color than thin ones. Raise it towards infinity for a
+        material that absorbs nothing.
+        """
+        m = self._geometry.getOutlineMaterial()
+        return m.transmission_distance
+
+    @transmission_distance.setter
+    def transmission_distance(self, value):
+        m = self._geometry.getOutlineMaterial()
+        m.transmission_distance = float(value)
         self._geometry.setOutlineMaterial(m)
 
     @property

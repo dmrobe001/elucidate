@@ -43,10 +43,12 @@ def _cube_scene(device, spec_trans=0.0):
         solid=0.0,
         color=fresnel.color.linear([0.1, 0.8, 0.3]),
         spec_trans=spec_trans,
-        # matched index, so transmission passes straight through. These tests are
-        # about which hits shade, not about refraction; test_refraction.py covers
-        # what an index contrast does.
+        # Matched index, so transmission passes straight through, and an absorption
+        # distance long enough that the interior takes nothing out of it. These tests
+        # are about which hits shade; test_refraction.py and test_absorption.py cover
+        # what an index contrast and a finite absorption distance do.
         ior=1.0,
+        transmission_distance=1e6,
     )
 
     return scene
@@ -137,6 +139,6 @@ def test_backface_transmission_path(device_):
     contribution that bounced inside the solid.
 
     Measured mean channel value at ``spec_trans=0.9``: 15.04 when those paths
-    were killed, 18.40 once they shade. The threshold sits between the two.
+    were killed, 22.65 once they shade. The threshold sits between the two.
     """
     assert _path_render_mean(device_, spec_trans=0.9) > 17.0

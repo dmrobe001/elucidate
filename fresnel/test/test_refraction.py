@@ -93,9 +93,8 @@ def test_fresnel_normal_incidence():
 
 def test_fresnel_no_interface():
     """An index ratio of 1 is not an interface and reflects nothing."""
-    for cos_i in numpy.linspace(0.01, 1.0, 25):
-        # matched indices cancel analytically; float32 leaves a rounding residue
-        assert fresnel._common.fresnel_dielectric(cos_i, 1.5, 1.5) < 1e-6
+    for cos_i in numpy.linspace(0.0, 1.0, 25):
+        assert fresnel._common.fresnel_dielectric(cos_i, 1.5, 1.5) == 0.0
 
 
 def test_fresnel_grazing_reflects_everything():
@@ -189,21 +188,31 @@ def test_ior_round_trips_through_proxies(device_):
 # ---------------------------------------------------------------------------
 
 
-def test_ior_one_transmits_without_bending(device_):
-    """An index of 1 reproduces undeviated transmission exactly.
+def test_matched_index_object_is_not_there(device_):
+    """A clear object at an index of 1 renders as though it were absent.
 
     With no index contrast the Fresnel reflectance is zero and Snell's law
-    leaves the direction untouched, so the render must match the straight
-    through transmission fresnel did before refraction existed, to the bit.
-    """
-    scene = _cube_scene(device_, spec_trans=0.9, ior=1.0)
-    scene.camera = fresnel.camera.Orthographic(
-        position=(0, 0, 5), look_at=(0, 0, 0), up=(0, 1, 0), height=1
-    )
+    leaves the direction untouched, so a fully transmissive object that absorbs
+    nothing puts no interface in the light's way at all. Rendering it must give
+    back exactly the empty scene.
 
-    assert _path_render(device_, scene)[:, :, 0:3].mean() == pytest.approx(
-        18.397, abs=0.01
+    Below about 256 samples a single pixel on the silhouette differs by one or
+    two levels, converging away as the sample count rises and unchanged by the
+    size of the sphere relative to the ray epsilon. That is variance at the
+    limb, where only part of a pixel's anti-aliasing samples clip the sphere,
+    so sample well past it.
+    """
+    with_object = _path_render(device_, _backdrop_scene(device_, ior=1.0), samples=512)
+
+    empty = fresnel.Scene(device_, lights=conftest.test_lights())
+    empty.background_color = fresnel.color.linear([1.0, 1.0, 1.0])
+    empty.background_alpha = 1.0
+    empty.camera = fresnel.camera.Orthographic(
+        position=(0, 0, 5), look_at=(0, 0, 0), up=(0, 1, 0), height=4
     )
+    without_object = _path_render(device_, empty, samples=512)
+
+    numpy.testing.assert_array_equal(with_object[:], without_object[:])
 
 
 def test_refraction_bends_light(device_):

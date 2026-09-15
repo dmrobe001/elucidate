@@ -46,6 +46,12 @@ DEVICE inline float schlick(float x)
 */
 DEVICE inline float fresnel_dielectric(float cos_i, float eta_i, float eta_t)
     {
+    // Matched indices are not an interface at all and reflect nothing at any angle. Taking
+    // this case first keeps a grazing ray out of the branch below, where sin2_t reaches 1
+    // and would report total internal reflection across a boundary that does not exist.
+    if (eta_i == eta_t)
+        return 0.0f;
+
     cos_i = fminf(fmaxf(cos_i, 0.0f), 1.0f);
 
     const float eta = eta_i / eta_t;
@@ -74,6 +80,15 @@ DEVICE inline float fresnel_dielectric(float cos_i, float eta_i, float eta_t)
 DEVICE inline bool
 refract(vec3<float>& l, const vec3<float>& v, const vec3<float>& n, const float eta)
     {
+    // A matched index does not bend light. Taking this case first keeps a grazing ray out
+    // of the test below, where sin2_t reaches 1 and would report total internal reflection
+    // across a boundary that does not exist.
+    if (eta == 1.0f)
+        {
+        l = -v;
+        return true;
+        }
+
     const float cos_i = dot(n, v);
     const float sin2_t = eta * eta * (1.0f - cos_i * cos_i);
 
@@ -118,18 +133,20 @@ struct Material
     float metal; //!< Set to 0 for dielectric materials, set to 1 for metals
     float spec_trans; //!< Set to 0 for solid materials, 1 for fully transmissive
     float ior; //!< Index of refraction of the material's interior
+    float transmission_distance; //!< Distance over which the interior absorbs down to `color`
 
     //! Default constructor gives a plain dielectric material
     DEVICE Material()
         : solid(0.0f), color(RGB<float>(0.9f, 0.9f, 0.9f)), primitive_color_mix(0.0f),
-          roughness(0.1f), specular(0.5f), metal(0.0f), spec_trans(0.0f), ior(1.5f)
+          roughness(0.1f), specular(0.5f), metal(0.0f), spec_trans(0.0f), ior(1.5f),
+          transmission_distance(1.0f)
         {
         }
 
     //! Set material parameters
     DEVICE explicit Material(const RGB<float> _color, float _solid = 0.0f)
         : solid(_solid), color(_color), primitive_color_mix(0.0f), roughness(0.1f), specular(0.5f),
-          metal(0.0f), spec_trans(0.0f), ior(1.5f)
+          metal(0.0f), spec_trans(0.0f), ior(1.5f), transmission_distance(1.0f)
         {
         }
 
@@ -294,6 +311,27 @@ struct Material
     DEVICE RGB<float> getColor(const RGB<float>& shading_color) const
         {
         return lerp(primitive_color_mix, color, shading_color);
+        }
+
+    //! Fraction of light surviving absorption along a path inside the material
+    /*! \param shading_color Color of the primitive
+        \param distance Distance travelled inside the material
+
+        Beer-Lambert absorption, parameterized so that the material color is the color seen
+        through one \a transmission_distance of it: the surviving fraction is
+        ``color ** (distance / transmission_distance)``. Twice the distance squares the color,
+        which is what makes thick parts of a solid read as deeper in color than thin ones.
+    */
+    DEVICE RGB<float> absorption(const RGB<float>& shading_color, float distance) const
+        {
+        const RGB<float> tint = getColor(shading_color);
+        const float d = distance / fmaxf(transmission_distance, 1e-6f);
+
+        // hold the base away from zero so that a fully absorbing channel reaches 0 rather
+        // than raising 0 to the power 0 at a grazing hit
+        return RGB<float>(powf(fmaxf(tint.r, 1e-6f), d),
+                          powf(fmaxf(tint.g, 1e-6f), d),
+                          powf(fmaxf(tint.b, 1e-6f), d));
         }
 
     DEVICE vec3<float> importanceSampleGGX(vec2<float> xi, vec3<float> v, vec3<float> n) const

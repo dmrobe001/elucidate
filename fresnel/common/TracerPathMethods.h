@@ -130,6 +130,14 @@ DEVICE void path_tracer_hit(PRDpath& prd,
         n = -n;
         }
 
+    // A back face is the far wall of a solid seen from the inside, so the segment just
+    // travelled lay within the material and its interior absorbed along the way. Only a
+    // transmissive material has an interior a path can be inside of.
+    if (backfacing && _material.spec_trans > 0.0f)
+        {
+        prd.attenuation *= _material.absorption(_shading_color, _t_hit);
+        }
+
     if (m.isSolid())
         {
         // testing: treat solid colors as emitters
@@ -156,15 +164,10 @@ DEVICE void path_tracer_hit(PRDpath& prd,
 
         if (event == scatter_specular_transmission)
             {
-            // Tint the transmitted ray. Entry and exit each apply the square root so that a
-            // full crossing multiplies to the material color.
-            // TODO: replace with distance dependent Beer-Lambert absorption, which is what
-            // makes thick parts of a solid read as deeper in color than thin ones.
-            RGB<float> trans_color = m.getColor(_shading_color);
-            trans_color.r = sqrtf(trans_color.r);
-            trans_color.g = sqrtf(trans_color.g);
-            trans_color.b = sqrtf(trans_color.b);
-            prd.attenuation *= trans_color * factor;
+            // The interface itself is clear. Color comes from absorption along the path
+            // inside the material, applied above on arriving at the far wall, so crossing
+            // the boundary only rescales radiance.
+            prd.attenuation *= factor;
             }
         else if (event == scatter_specular_reflection)
             {

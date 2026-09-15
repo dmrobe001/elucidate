@@ -19,6 +19,10 @@ Unreleased
 * Refraction. Transmitted rays bend by Snell's law, and a transmissive surface
   reflects or refracts according to the Fresnel reflectance of the interface,
   including total internal reflection.
+* ``Material.transmission_distance``, the distance over which the interior of a
+  transmissive material absorbs light down to ``color``. Absorption follows
+  Beer-Lambert, so thick parts of a solid render deeper in color than thin
+  ones.
 * Shade back faces. Hits on the inside of a solid shade like any other hit
   instead of being dropped, which is a prerequisite for refraction.
 * The background shows through transmissive materials and in mirror
@@ -28,8 +32,12 @@ Unreleased
 *Changed*
 
 * ``spec_trans`` now selects a smooth dielectric interface rather than passing
-  rays through undeviated. Scenes that set ``spec_trans`` render differently:
-  set ``ior=1`` to keep the previous appearance.
+  rays through undeviated. Scenes that set ``spec_trans`` render differently.
+* A transmissive material tints light by absorbing along the path inside it
+  rather than by tinting each crossing of its surface, so the depth of color
+  now depends on how far the light travelled through the solid. ``color`` is
+  the color seen through one ``transmission_distance``; the previous
+  appearance corresponded to a crossing of exactly that distance.
 * Intersection routines report the geometric normal, pointing out of the
   primitive whichever side the ray struck, rather than one pre-flipped toward
   the ray. The tracers flip it to the viewing side for shading. Rendered

@@ -1,5 +1,6 @@
 set(files conftest.py
           pytest.ini
+          test_absorption.py
           test_backfaces.py
           test_camera_orthographic.py
           test_camera_perspective.py

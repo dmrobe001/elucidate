@@ -58,6 +58,7 @@ PYBIND11_MODULE(_common, m)
         .def_readwrite("specular", &Material::specular)
         .def_readwrite("spec_trans", &Material::spec_trans)
         .def_readwrite("ior", &Material::ior)
+        .def_readwrite("transmission_distance", &Material::transmission_distance)
         .def_readwrite("metal", &Material::metal)
         .def_readwrite("color", &Material::color)
         .def("__repr__",
@@ -68,7 +69,8 @@ PYBIND11_MODULE(_common, m)
                    << a.color.r << ", " << a.color.g << ", " << a.color.b << ")"
                    << " primitive_color_mix=" << a.primitive_color_mix
                    << " roughness=" << a.roughness << " specular=" << a.specular
-                   << " spec_trans=" << a.spec_trans << " ior=" << a.ior << " metal=" << a.metal
+                   << " spec_trans=" << a.spec_trans << " ior=" << a.ior
+                   << " transmission_distance=" << a.transmission_distance << " metal=" << a.metal
                    << ">";
 
                  return s.str();
