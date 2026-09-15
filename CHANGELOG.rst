@@ -21,6 +21,9 @@ Unreleased
   including total internal reflection.
 * Shade back faces. Hits on the inside of a solid shade like any other hit
   instead of being dropped, which is a prerequisite for refraction.
+* The background shows through transmissive materials and in mirror
+  reflections. It remains a backdrop rather than an environment light, so it
+  does not light diffuse surfaces and opaque scenes render unchanged.
 
 *Changed*
 

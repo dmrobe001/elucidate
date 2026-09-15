@@ -267,3 +267,68 @@ def test_higher_ior_reflects_more(device_):
 
     assert means[0] < means[1] < means[2]
     assert means[0] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# the backdrop
+# ---------------------------------------------------------------------------
+
+
+def _backdrop_scene(device, ior=1.0, spec_trans=1.0, background=1.0):
+    """Build a scene holding one sphere against a flat background."""
+    scene = fresnel.Scene(device, lights=conftest.test_lights())
+    scene.background_color = fresnel.color.linear([background] * 3)
+    scene.background_alpha = 1.0
+
+    sphere = fresnel.geometry.Sphere(scene, position=[[0, 0, 0]], radius=1.0)
+    sphere.material = fresnel.material.Material(
+        color=fresnel.color.linear([1.0, 1.0, 1.0]),
+        spec_trans=spec_trans,
+        ior=ior,
+    )
+
+    scene.camera = fresnel.camera.Orthographic(
+        position=(0, 0, 5), look_at=(0, 0, 0), up=(0, 1, 0), height=4
+    )
+
+    return scene
+
+
+def test_backdrop_visible_through_glass(device_):
+    """The backdrop shows through a transmissive object.
+
+    A miss only painted the background on the primary ray, so a path that
+    transmitted and then escaped collected nothing and the object rendered
+    black. At ior 1 there is no interface at all, so the sphere has to
+    disappear into the backdrop completely.
+    """
+    buf = _path_render(device_, _backdrop_scene(device_, ior=1.0), samples=128)
+
+    through_sphere = buf[32, 32, 0:3].mean()
+    beside_sphere = buf[2, 2, 0:3].mean()
+
+    assert beside_sphere == 255.0
+    assert through_sphere == beside_sphere
+
+
+def test_backdrop_does_not_light_opaque_surfaces(device_):
+    """The backdrop is a backdrop, not an environment light.
+
+    A diffuse bounce loses sight of it, so changing the background cannot
+    change how an opaque object shades. This is what keeps the reference
+    images stable.
+    """
+    dark = _path_render(
+        device_, _backdrop_scene(device_, spec_trans=0.0, background=0.0), samples=64
+    )
+    light = _path_render(
+        device_, _backdrop_scene(device_, spec_trans=0.0, background=1.0), samples=64
+    )
+
+    # the backgrounds differ
+    assert dark[2, 2, 0:3].mean() == 0.0
+    assert light[2, 2, 0:3].mean() == 255.0
+
+    # the sphere does not
+    centre = (slice(24, 40), slice(24, 40), slice(0, 3))
+    numpy.testing.assert_array_equal(dark[centre], light[centre])

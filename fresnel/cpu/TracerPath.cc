@@ -143,6 +143,7 @@ void TracerPath::renderImplementation(std::shared_ptr<Scene> scene)
                             {
                             prd.attenuation = RGB<float>(1.0f, 1.0f, 1.0f);
                             prd.done = false;
+                            prd.specular_path = true;
 
                             for (prd.depth = 0;; prd.depth++)
                                 {

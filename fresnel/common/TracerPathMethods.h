@@ -31,6 +31,14 @@ struct PRDpath
     unsigned int light_sample;
     unsigned int depth;
     bool done;
+
+    //! True while every scatter so far has been a delta event
+    /*! The background is a backdrop rather than an environment light: it lights nothing, and a
+        diffuse or glossy bounce loses sight of it. A path that has only reflected off or
+        refracted through smooth interfaces is still looking straight out at it, though, which
+        is what lets the backdrop show through glass and in mirrors.
+    */
+    bool specular_path;
     };
 
 DEVICE void path_tracer_miss(PRDpath& prd,
@@ -71,6 +79,13 @@ DEVICE void path_tracer_miss(PRDpath& prd,
                 prd.result += prd.attenuation * _lights.color[light_id] / sinf(half_angle);
                 }
             } // end loop over lights
+
+        // the backdrop is still in view along a path that has only passed through smooth
+        // interfaces, so it shows through glass and in mirrors
+        if (prd.specular_path)
+            {
+            prd.result += prd.attenuation * _background_color;
+            }
         }
 
     prd.done = true;
@@ -159,6 +174,10 @@ DEVICE void path_tracer_hit(PRDpath& prd,
             }
         else
             {
+            // a diffuse or glossy bounce scatters over a lobe rather than a direction, so the
+            // path is no longer looking straight out at the backdrop
+            prd.specular_path = false;
+
             float ndotl = dot(n, l);
 
             // n faces the viewer by construction, so only the sampled light direction can end
