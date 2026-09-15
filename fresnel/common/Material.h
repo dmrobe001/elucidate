@@ -54,13 +54,17 @@ struct Material
     float metal; //!< Set to 0 for dielectric materials, set to 1 for metals
     float spec_trans; //!< Set to 0 for solid materials, 1 for fully transmissive
 
-    //! Default constructor gives uninitialized material
-    DEVICE Material() { }
+    //! Default constructor gives a plain dielectric material
+    DEVICE Material()
+        : solid(0.0f), color(RGB<float>(0.9f, 0.9f, 0.9f)), primitive_color_mix(0.0f),
+          roughness(0.1f), specular(0.5f), metal(0.0f), spec_trans(0.0f)
+        {
+        }
 
     //! Set material parameters
     DEVICE explicit Material(const RGB<float> _color, float _solid = 0.0f)
         : solid(_solid), color(_color), primitive_color_mix(0.0f), roughness(0.1f), specular(0.5f),
-          metal(0.0f)
+          metal(0.0f), spec_trans(0.0f)
         {
         }
 
