@@ -112,22 +112,15 @@ if (ENABLE_EMBREE)
 
 endif()
 
-option(ENABLE_OPTIX "Use OptiX for ray tracing on the GPU" OFF)
+# The GPU backend is currently unimplemented. fresnel previously shipped an
+# OptiX 6 backend, but that API was removed in OptiX 7 and the code could no
+# longer be built against any current release. The backend-neutral device code
+# in fresnel/common/ and the `gpu` execution mode in fresnel/__init__.py are
+# retained so that a replacement backend can be dropped in without disturbing
+# the public API.
 
-if (ENABLE_OPTIX)
-    enable_language(CUDA)
-    if (CMAKE_CUDA_COMPILER_VERSION VERSION_LESS 9.0)
-        message(SEND_ERROR "Fresnel requires CUDA 9.0 or newer")
-    endif()
-
-    find_package(OptiX REQUIRED)
-
-    include_directories(${OptiX_INCLUDE})
-    include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
-endif()
-
-if (NOT (ENABLE_OPTIX) AND NOT (ENABLE_EMBREE))
-    message(SEND_ERROR "No libraries will be built. Enable at least one of embree or OptiX.")
+if (NOT ENABLE_EMBREE)
+    message(SEND_ERROR "No libraries will be built. Enable embree.")
 endif()
 
 #############################################################################################

@@ -79,8 +79,8 @@ The sections below provide details on each of these steps.
 Install prerequisites
 ---------------------
 
-You will need to install a number of tools and libraries to build **fresnel**. The options
-``ENABLE_EMBREE`` and ``ENABLE_OPTIX`` each require additional libraries when enabled.
+You will need to install a number of tools and libraries to build **fresnel**. The option
+``ENABLE_EMBREE`` requires additional libraries when enabled.
 
 Install the required dependencies:
 
@@ -126,11 +126,6 @@ Install additional packages needed to build the documentation:
 
   - **Intel TBB**
   - **Intel Embree**
-
-- For GPU execution (required when ``ENABLE_OPTIX=ON``):
-
-  - **OptiX** >= 6.0, < 7.0
-  - **CUDA**
 
 **Optional runtime dependencies:**
 
@@ -208,7 +203,6 @@ these options on the command line.
 Other option changes take effect at any time:
 
 - ``ENABLE_EMBREE`` - When enabled, build the CPU backend using Embree (default: ``on``).
-- ``BUILD_OPTIX`` - When enabled, build the GPU backend using OpTiX (default: ``off``).
 - ``CMAKE_BUILD_TYPE`` - Sets the build type (case sensitive) Options:
 
   - ``Debug`` - Compiles debug information into the library and executables. Enables asserts to
