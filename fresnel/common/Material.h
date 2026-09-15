@@ -150,6 +150,21 @@ struct Material
         {
         }
 
+    //! GGX roughness parameter for the opaque lobe, held away from zero
+    /*! The GGX distribution D = alpha^2 / (pi * (1 + (alpha^2 - 1) cos^2)^2) evaluates to
+        0/0 as alpha goes to zero at normal incidence, and the NaN spreads through the whole
+        image. A perfect mirror is a delta distribution that a finite BRDF cannot express at
+        all, so the opaque lobe keeps the microsurface fractionally rough instead. The floor
+        bites below roughness 0.032, where the highlight is already a point.
+
+        The dielectric lobe does not go through here: it scatters about a sampled visible
+        normal, which degenerates cleanly to the surface normal and a sharp interface.
+    */
+    DEVICE float alphaGGX() const
+        {
+        return fmaxf(roughness * roughness, 1e-3f);
+        }
+
     DEVICE RGB<float>
     brdf(vec3<float> l, vec3<float> v, vec3<float> n, const RGB<float>& shading_color) const
         {
@@ -180,7 +195,7 @@ struct Material
 
         // specular term
         // D(theta_h) - using D_GTR_2 (eq 8 from Physically based Shading at Disney)
-        float alpha = roughness * roughness;
+        float alpha = alphaGGX();
         float alpha_sq = alpha * alpha;
         float denom_rt = (1.0f + (alpha_sq - 1.0f) * ndoth * ndoth);
         float D = alpha_sq / (float(M_PI) * denom_rt * denom_rt);
@@ -262,7 +277,7 @@ struct Material
 
         // specular term
         // D(theta_h) - using D_GTR_2 (eq 8 from Physically based Shading at Disney)
-        float alpha = roughness * roughness;
+        float alpha = alphaGGX();
         float alpha_sq = alpha * alpha;
         float denom_rt = (1.0f + (alpha_sq - 1.0f) * ndoth * ndoth);
         float D = alpha_sq / (float(M_PI) * denom_rt * denom_rt);
@@ -338,7 +353,7 @@ struct Material
         {
         // use eq 9 from "Physically based shading at Disney" to compute the random direction to
         // sample
-        float alpha = roughness * roughness;
+        float alpha = alphaGGX();
         float phi = 2.0f * float(M_PI) * xi.x;
         float cos_theta = sqrtf((1.0f - xi.y) / (1.0f + (alpha * alpha - 1.0f) * xi.y));
         float sin_theta = sqrt(1.0f - cos_theta * cos_theta);
@@ -372,7 +387,7 @@ struct Material
         float ndoth = dot(n, h); // cos(theta_h)
 
         // D(theta_h) - using D_GTR_2 (eq 8 from Physically based Shading at Disney)
-        float alpha = roughness * roughness;
+        float alpha = alphaGGX();
         float alpha_sq = alpha * alpha;
         float denom_rt = (1.0f + (alpha_sq - 1.0f) * ndoth * ndoth);
         float D = alpha_sq / (float(M_PI) * denom_rt * denom_rt);

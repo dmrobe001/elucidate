@@ -47,6 +47,8 @@ Unreleased
 
 * ``Material`` left ``spec_trans`` uninitialized, so the default material each
   geometry installs on construction carried an indeterminate value.
+* The GGX distribution evaluated to 0/0 at normal incidence for roughness at or
+  below about 0.01, and the resulting NaN spread through the image.
 
 *Removed*
 
