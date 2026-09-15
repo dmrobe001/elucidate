@@ -97,23 +97,34 @@ class RayGen
         return l;
         }
 
-    //! Multiple importance sampling of reflected and transmitted rays
+    //! Sample a scattered direction from a material
     /*! \returns The direction to sample next
         \param factor [output] Weighting factor for the sample
-        \param transmit [output] True when transmission is selected, False for reflection
+        \param event [output] Which lobe the direction was drawn from
         \param v Vector pointing back toward the viewing direction
-        \param n Normal vector
+        \param n Normal vector, on the same side as \a v
+        \param backfacing True when the ray struck the inside of the surface
         \param depth Depth of the ray in the trace
         \param sample Sample index
         \param m Material
+
+        The material is a mixture of an opaque lobe and a smooth dielectric interface, selected
+        with probability \a spec_trans. Because each lobe is chosen with the same probability
+        as its weight in the mixture, the selection probability cancels and \a factor carries
+        only the lobe's own weight.
+
+        The dielectric lobe splits again into reflection and refraction, chosen with the Fresnel
+        reflectance so that both branches carry unit weight. \a factor then holds only the
+        radiance scaling across the interface.
     */
-    DEVICE vec3<float> MISReflectionTransmission(float& factor,
-                                                 bool& transmit,
-                                                 const vec3<float>& v,
-                                                 const vec3<float>& n,
-                                                 unsigned int depth,
-                                                 unsigned int sample,
-                                                 const Material& m) const
+    DEVICE vec3<float> sampleScatterDirection(float& factor,
+                                              ScatterEvent& event,
+                                              const vec3<float>& v,
+                                              const vec3<float>& n,
+                                              bool backfacing,
+                                              unsigned int depth,
+                                              unsigned int sample,
+                                              const Material& m) const
         {
         r123::Philox4x32 rng;
         r123::Philox4x32::ctr_type rng_counter = {{0, depth, sample, rng_val_mis}};
@@ -125,15 +136,64 @@ class RayGen
         float choice_trans = r123::u01<float>(rng_u.v[3]);
 
         vec3<float> l;
-        transmit = (choice_trans <= m.spec_trans);
-        if (transmit)
+        if (choice_trans <= m.spec_trans)
             {
-            // hard code perfect transmission
-            l = -v;
+            // A ray on its way out of the material meets the same interface from the dense
+            // side, so the two indices swap.
+            const float eta_i = backfacing ? m.ior : 1.0f;
+            const float eta_t = backfacing ? 1.0f : m.ior;
+            const float eta = eta_i / eta_t;
+
+            // Matched indices are not a boundary at all, and a boundary that does not exist
+            // cannot be rough. Without this the microsurface would shadow light crossing
+            // between two identical media.
+            if (eta_i == eta_t)
+                {
+                event = scatter_specular_transmission;
+                factor = 1.0f;
+                return -v;
+                }
+
+            // Scatter about a microfacet normal rather than the surface normal. At roughness
+            // 0 the only visible facet is the surface itself and this is an exact mirror or
+            // an exact refraction; as roughness grows the interface frosts over.
+            const vec3<float> h = m.sampleVisibleNormalGGX(xi, v, n);
+
+            const float F = fresnel_dielectric(dot(h, v), eta_i, eta_t);
+
+            // reflect or refract with the Fresnel reflectance, so that the choice cancels
+            // and each branch is left carrying only the visibility of the facet it found
+            bool reflect = (choice_mis < F);
+            if (!reflect)
+                {
+                // total internal reflection leaves the mirror direction as the only option
+                reflect = !refract(l, v, h, eta);
+                }
+
+            if (reflect)
+                {
+                event = scatter_specular_reflection;
+                l = 2.0f * dot(h, v) * h - v;
+
+                // a facet can reflect into the surface it belongs to; nothing escapes there
+                factor = (dot(n, l) > 0.0f) ? m.smithG1(dot(n, l)) : 0.0f;
+                }
+            else
+                {
+                event = scatter_specular_transmission;
+
+                // likewise a facet can refract back out of the side the ray came from
+                factor = (dot(n, l) < 0.0f) ? m.smithG1(dot(n, l)) : 0.0f;
+
+                // radiance is compressed on the way into a denser medium and expanded again
+                // on the way out, so a full crossing multiplies back to 1
+                factor *= eta * eta;
+                }
             }
         else
             {
             // handle reflection with multiple importance sampling
+            event = scatter_diffuse_or_glossy;
             if (choice_mis <= 0.5f)
                 {
                 // diffuse sampling

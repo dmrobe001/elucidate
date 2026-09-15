@@ -40,6 +40,10 @@ PYBIND11_MODULE(_common, m)
     m.def("cpu_built", &cpu_built);
     m.def("find_polyhedron_faces", &find_polyhedron_faces);
 
+    // exposed so that the unit tests can exercise the Fresnel equation directly, including
+    // total internal reflection and grazing angles, which are awkward to isolate in a render
+    m.def("fresnel_dielectric", &fresnel_dielectric);
+
     pybind11::class_<RGB<float>>(m, "RGBf")
         .def(pybind11::init<float, float, float>())
         .def_readwrite("r", &RGB<float>::r)
@@ -53,6 +57,8 @@ PYBIND11_MODULE(_common, m)
         .def_readwrite("roughness", &Material::roughness)
         .def_readwrite("specular", &Material::specular)
         .def_readwrite("spec_trans", &Material::spec_trans)
+        .def_readwrite("ior", &Material::ior)
+        .def_readwrite("transmission_distance", &Material::transmission_distance)
         .def_readwrite("metal", &Material::metal)
         .def_readwrite("color", &Material::color)
         .def("__repr__",
@@ -63,7 +69,9 @@ PYBIND11_MODULE(_common, m)
                    << a.color.r << ", " << a.color.g << ", " << a.color.b << ")"
                    << " primitive_color_mix=" << a.primitive_color_mix
                    << " roughness=" << a.roughness << " specular=" << a.specular
-                   << " spec_trans=" << a.spec_trans << " metal=" << a.metal << ">";
+                   << " spec_trans=" << a.spec_trans << " ior=" << a.ior
+                   << " transmission_distance=" << a.transmission_distance << " metal=" << a.metal
+                   << ">";
 
                  return s.str();
              });

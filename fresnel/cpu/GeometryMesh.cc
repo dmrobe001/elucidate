@@ -140,7 +140,8 @@ void GeometryMesh::intersect(const struct RTCIntersectFunctionNArguments* args)
     float u, v, w, t, d;
     vec3<float> n;
 
-    // double-sided triangle test
+    // double-sided triangle test. intersect_ray_triangle() culls back faces, so a miss is
+    // retried against the reversed winding to catch hits on the far side of the triangle.
     if (!intersect_ray_triangle(u,
                                 v,
                                 w,
@@ -151,19 +152,26 @@ void GeometryMesh::intersect(const struct RTCIntersectFunctionNArguments* args)
                                 ray_org_local + ray_dir_local,
                                 v0,
                                 v1,
-                                v2)
-        && !intersect_ray_triangle(v,
-                                   u,
-                                   w,
-                                   t,
-                                   d,
-                                   n,
-                                   ray_org_local,
-                                   ray_org_local + ray_dir_local,
-                                   v1,
-                                   v0,
-                                   v2))
-        return;
+                                v2))
+        {
+        if (!intersect_ray_triangle(v,
+                                    u,
+                                    w,
+                                    t,
+                                    d,
+                                    n,
+                                    ray_org_local,
+                                    ray_org_local + ray_dir_local,
+                                    v1,
+                                    v0,
+                                    v2))
+            return;
+
+        // The retry reversed the winding, so it returns a normal pointing along the ray.
+        // Flip it back to recover the triangle's geometric normal: the tracers rely on the
+        // reported normal identifying which face was hit.
+        n = -n;
+        }
 
     // if the t is in (tnear,tfar), we hit the entry plane
     if ((ray.tnear < t) & (t < ray.tfar))

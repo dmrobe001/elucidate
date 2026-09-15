@@ -187,3 +187,26 @@ if __name__ == "__main__":
 
     scene = conftest.scene_hex_sphere(device)
     test_metal(scene, generate=True)
+
+
+def test_low_roughness_is_finite(device_):
+    """A near mirror finish does not produce NaNs.
+
+    The GGX distribution evaluates to 0/0 as roughness approaches zero at
+    normal incidence, and the NaN spread through the whole image. The opaque
+    lobe now holds the microsurface fractionally rough.
+    """
+    import numpy
+
+    for roughness in (0.0, 0.001, 0.01, 0.05):
+        scene = conftest.scene_hex_sphere(device_)
+        scene.geometry[0].material.roughness = roughness
+
+        tracer = fresnel.tracer.Path(device=device_, w=32, h=32)
+        tracer.sample(scene, samples=32, light_samples=4)
+
+        linear = numpy.array(tracer.linear_output[:])
+        assert numpy.all(numpy.isfinite(linear))
+
+        # and the sphere is still lit rather than blacked out by the NaN
+        assert linear[:, :, 0:3].max() > 0.0

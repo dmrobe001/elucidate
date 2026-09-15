@@ -125,6 +125,16 @@ void TracerDirect::renderImplementation(std::shared_ptr<Scene> scene)
                                 vec3<float> n(ray_hit.hit.Ng_x, ray_hit.hit.Ng_y, ray_hit.hit.Ng_z);
                                 n /= std::sqrt(dot(n, n));
                                 vec3<float> v = -dir / std::sqrt(dot(dir, dir));
+
+                                // Geometry reports the geometric normal, which points out of
+                                // the primitive whichever side the ray struck. Flip it to the
+                                // side the ray arrived from so that back faces shade instead of
+                                // going black.
+                                if (dot(n, v) < 0.0f)
+                                    {
+                                    n = -n;
+                                    }
+
                                 Material m;
 
                                 // apply the material color or outline color depending on

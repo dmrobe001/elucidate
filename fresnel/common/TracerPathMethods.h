@@ -31,6 +31,14 @@ struct PRDpath
     unsigned int light_sample;
     unsigned int depth;
     bool done;
+
+    //! True while every scatter so far has been a delta event
+    /*! The background is a backdrop rather than an environment light: it lights nothing, and a
+        diffuse or glossy bounce loses sight of it. A path that has only reflected off or
+        refracted through smooth interfaces is still looking straight out at it, though, which
+        is what lets the backdrop show through glass and in mirrors.
+    */
+    bool specular_path;
     };
 
 DEVICE void path_tracer_miss(PRDpath& prd,
@@ -71,6 +79,13 @@ DEVICE void path_tracer_miss(PRDpath& prd,
                 prd.result += prd.attenuation * _lights.color[light_id] / sinf(half_angle);
                 }
             } // end loop over lights
+
+        // the backdrop is still in view along a path that has only passed through smooth
+        // interfaces, so it shows through glass and in mirrors
+        if (prd.specular_path)
+            {
+            prd.result += prd.attenuation * _background_color;
+            }
         }
 
     prd.done = true;
@@ -102,8 +117,26 @@ DEVICE void path_tracer_hit(PRDpath& prd,
         m = _outline_material;
         }
 
+    // Geometry reports the *geometric* normal, which points out of the primitive whichever side
+    // the ray struck. Flip it to the side the ray arrived from before shading, and remember
+    // which face was hit: a back face is the far wall of a solid seen from the inside, which is
+    // exactly where a transmitted path continues.
     vec3<float> n = _shading_normal * fast::rsqrt(dot(_shading_normal, _shading_normal));
     vec3<float> v = -vec3<float>(ray_direction);
+
+    const bool backfacing = (dot(n, v) < 0.0f);
+    if (backfacing)
+        {
+        n = -n;
+        }
+
+    // A back face is the far wall of a solid seen from the inside, so the segment just
+    // travelled lay within the material and its interior absorbed along the way. Only a
+    // transmissive material has an interior a path can be inside of.
+    if (backfacing && _material.spec_trans > 0.0f)
+        {
+        prd.attenuation *= _material.absorption(_shading_color, _t_hit);
+        }
 
     if (m.isSolid())
         {
@@ -117,32 +150,49 @@ DEVICE void path_tracer_hit(PRDpath& prd,
         // when the ray hits an object with a normal material, update the attenuation using the BRDF
         // choose a random direction l to continue the path.
         float factor = 1.0;
-        bool transmit = false;
+        ScatterEvent event = scatter_diffuse_or_glossy;
 
-        vec3<float> l = ray_gen.MISReflectionTransmission(factor,
-                                                          transmit,
-                                                          v,
-                                                          n,
-                                                          prd.depth,
-                                                          (_n_samples - 1) * _light_samples
-                                                              + prd.light_sample,
-                                                          m);
-        if (transmit)
+        vec3<float> l
+            = ray_gen.sampleScatterDirection(factor,
+                                             event,
+                                             v,
+                                             n,
+                                             backfacing,
+                                             prd.depth,
+                                             (_n_samples - 1) * _light_samples + prd.light_sample,
+                                             m);
+
+        if (event == scatter_specular_transmission || event == scatter_specular_reflection)
             {
-            // perfect transmission
-            RGB<float> trans_color = m.getColor(_shading_color);
-            trans_color.r = sqrtf(trans_color.r);
-            trans_color.g = sqrtf(trans_color.g);
-            trans_color.b = sqrtf(trans_color.b);
-            prd.attenuation *= trans_color;
+            // A rough interface can hand back a direction on the wrong side of the surface:
+            // a facet reflecting into the surface it belongs to, or refracting back out of
+            // the side the ray arrived from. Those samples carry no light, so end the path
+            // here instead of tracing a bounce that cannot contribute.
+            if (factor <= 0.0f)
+                {
+                prd.attenuation = RGB<float>(0, 0, 0);
+                prd.done = true;
+                return;
+                }
+
+            // Neither is tinted by the body color. Reflection is light that never entered
+            // the material, and for transmission the color comes from absorption along the
+            // path inside it, applied above on arriving at the far wall, so crossing the
+            // boundary only rescales radiance.
+            prd.attenuation *= factor;
             }
         else
             {
+            // a diffuse or glossy bounce scatters over a lobe rather than a direction, so the
+            // path is no longer looking straight out at the backdrop
+            prd.specular_path = false;
+
             float ndotl = dot(n, l);
 
-            // When n dot v is less than 0, this is coming through the back of the surface
-            // skip this sample
-            if (dot(n, v) > 0.0f && ndotl > 0.0f)
+            // n faces the viewer by construction, so only the sampled light direction can end
+            // up behind the surface. Back faces are shaded rather than dropped: terminating
+            // them here would black out every path that continues inside a solid.
+            if (ndotl > 0.0f)
                 {
                 prd.attenuation *= m.brdf(l, v, n, _shading_color) * ndotl * factor;
                 }

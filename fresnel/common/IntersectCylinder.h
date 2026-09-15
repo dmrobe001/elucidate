@@ -31,6 +31,10 @@ namespace fresnel
 
     Output arguments \a d and \a N are set when the intersection routine returns true.
     \a t may be set even if there is no intersection.
+
+    \a N is the *geometric* normal: it always points out of the cylinder, including on back
+    faces. Callers that need a normal on the same side as the incoming ray must flip it
+    themselves (see \a shading_normal in TracerPathMethods.h).
 */
 DEVICE inline bool intersect_ray_cylinder(float& t,
                                           vec3<float>& N,
@@ -101,12 +105,9 @@ DEVICE inline bool intersect_ray_cylinder(float& t,
 
     if (hit)
         {
-        // determine normal.
+        // determine normal. This is the geometric normal: it points out of the cylinder even
+        // when the hit is on a back face. Callers flip it to the viewing side themselves.
         N = (P - pdotc * cdotc_inv * C);
-
-        // point normal toward the ray origin (double-sided surfaces)
-        if (dot(N, d) > 0)
-            N = -N;
         }
 
     return hit;

@@ -32,6 +32,119 @@ DEVICE inline float schlick(float x)
     return v_fifth;
     }
 
+//! Build an orthonormal tangent frame around a normal
+/*! \param t_x [output] First tangent
+    \param t_y [output] Second tangent
+    \param n Normal, assumed normalized
+
+    \a t_x, \a t_y and \a n form a right handed basis with \a n as the z axis.
+*/
+DEVICE inline void tangent_frame(vec3<float>& t_x, vec3<float>& t_y, const vec3<float>& n)
+    {
+    vec3<float> up(0, 0, 1.0f);
+    if (fabs(n.z) > 0.999)
+        up = vec3<float>(1.0f, 0, 0);
+    t_x = cross(up, n);
+    // TODO: normalize method in vectormath
+    t_x = t_x / sqrtf(dot(t_x, t_x));
+    t_y = cross(n, t_x);
+    }
+
+//! Smith masking-shadowing term for one direction on a GGX microsurface
+/*! \param cos_w Cosine of the angle between the direction and the surface normal
+    \param alpha GGX roughness parameter
+
+    \returns The fraction of the microsurface visible along the direction, 1 when smooth.
+*/
+DEVICE inline float smith_g1_ggx(float cos_w, float alpha)
+    {
+    cos_w = fabsf(cos_w);
+
+    const float alpha_sq = alpha * alpha;
+    const float cos_sq = cos_w * cos_w;
+
+    return 2.0f * cos_w / (cos_w + sqrtf(alpha_sq + cos_sq - alpha_sq * cos_sq));
+    }
+
+//! Fresnel reflectance of a smooth dielectric interface
+/*! \param cos_i Cosine of the angle between the incident direction and the normal
+    \param eta_i Index of refraction on the side the ray arrives from
+    \param eta_t Index of refraction on the side the ray would transmit into
+
+    \returns The fraction of unpolarized light reflected by the interface, 1 under total
+    internal reflection.
+
+    This is the full Fresnel equation for dielectrics rather than the Schlick approximation
+    used by the opaque BRDF. Schlick's form does not reach 1 at the critical angle, so it
+    cannot represent total internal reflection, which is a large part of how glass reads.
+*/
+DEVICE inline float fresnel_dielectric(float cos_i, float eta_i, float eta_t)
+    {
+    // Matched indices are not an interface at all and reflect nothing at any angle. Taking
+    // this case first keeps a grazing ray out of the branch below, where sin2_t reaches 1
+    // and would report total internal reflection across a boundary that does not exist.
+    if (eta_i == eta_t)
+        return 0.0f;
+
+    cos_i = fminf(fmaxf(cos_i, 0.0f), 1.0f);
+
+    const float eta = eta_i / eta_t;
+    const float sin2_t = eta * eta * (1.0f - cos_i * cos_i);
+
+    // total internal reflection: no transmitted direction exists
+    if (sin2_t >= 1.0f)
+        return 1.0f;
+
+    const float cos_t = sqrtf(1.0f - sin2_t);
+
+    const float r_parl = (eta_t * cos_i - eta_i * cos_t) / (eta_t * cos_i + eta_i * cos_t);
+    const float r_perp = (eta_i * cos_i - eta_t * cos_t) / (eta_i * cos_i + eta_t * cos_t);
+
+    return 0.5f * (r_parl * r_parl + r_perp * r_perp);
+    }
+
+//! Refract a direction through a smooth interface
+/*! \param l [output] The refracted direction, set only when this returns true
+    \param v Direction pointing back along the incoming ray
+    \param n Normal, on the same side as \a v
+    \param eta Ratio of the incident index of refraction to the transmitted one
+
+    \returns True when the ray refracts, false under total internal reflection.
+*/
+DEVICE inline bool
+refract(vec3<float>& l, const vec3<float>& v, const vec3<float>& n, const float eta)
+    {
+    // A matched index does not bend light. Taking this case first keeps a grazing ray out
+    // of the test below, where sin2_t reaches 1 and would report total internal reflection
+    // across a boundary that does not exist.
+    if (eta == 1.0f)
+        {
+        l = -v;
+        return true;
+        }
+
+    const float cos_i = dot(n, v);
+    const float sin2_t = eta * eta * (1.0f - cos_i * cos_i);
+
+    if (sin2_t >= 1.0f)
+        return false;
+
+    const float cos_t = sqrtf(1.0f - sin2_t);
+    l = -eta * v + (eta * cos_i - cos_t) * n;
+    return true;
+    }
+
+//! Which lobe of a material a sampled direction was drawn from
+/*! The path tracer weights the sample differently for each: the opaque lobe still needs its
+    BRDF and cosine applied, while the two delta lobes come back already weighted.
+*/
+enum ScatterEvent
+    {
+    scatter_diffuse_or_glossy, //!< The opaque BRDF
+    scatter_specular_reflection, //!< Mirror reflection off a dielectric interface
+    scatter_specular_transmission //!< Refraction through a dielectric interface
+    };
+
 //! Material properties
 /*! Material is a plain old data struct that holds material properties, and a few methods for
    computing an output brdf based on input vectors.
@@ -53,15 +166,37 @@ struct Material
     float specular; //!< Set to 0 for no specular highlights, 1 for strong highlights
     float metal; //!< Set to 0 for dielectric materials, set to 1 for metals
     float spec_trans; //!< Set to 0 for solid materials, 1 for fully transmissive
+    float ior; //!< Index of refraction of the material's interior
+    float transmission_distance; //!< Distance over which the interior absorbs down to `color`
 
-    //! Default constructor gives uninitialized material
-    DEVICE Material() { }
+    //! Default constructor gives a plain dielectric material
+    DEVICE Material()
+        : solid(0.0f), color(RGB<float>(0.9f, 0.9f, 0.9f)), primitive_color_mix(0.0f),
+          roughness(0.1f), specular(0.5f), metal(0.0f), spec_trans(0.0f), ior(1.5f),
+          transmission_distance(1.0f)
+        {
+        }
 
     //! Set material parameters
     DEVICE explicit Material(const RGB<float> _color, float _solid = 0.0f)
         : solid(_solid), color(_color), primitive_color_mix(0.0f), roughness(0.1f), specular(0.5f),
-          metal(0.0f)
+          metal(0.0f), spec_trans(0.0f), ior(1.5f), transmission_distance(1.0f)
         {
+        }
+
+    //! GGX roughness parameter for the opaque lobe, held away from zero
+    /*! The GGX distribution D = alpha^2 / (pi * (1 + (alpha^2 - 1) cos^2)^2) evaluates to
+        0/0 as alpha goes to zero at normal incidence, and the NaN spreads through the whole
+        image. A perfect mirror is a delta distribution that a finite BRDF cannot express at
+        all, so the opaque lobe keeps the microsurface fractionally rough instead. The floor
+        bites below roughness 0.032, where the highlight is already a point.
+
+        The dielectric lobe does not go through here: it scatters about a sampled visible
+        normal, which degenerates cleanly to the surface normal and a sharp interface.
+    */
+    DEVICE float alphaGGX() const
+        {
+        return fmaxf(roughness * roughness, 1e-3f);
         }
 
     DEVICE RGB<float>
@@ -94,7 +229,7 @@ struct Material
 
         // specular term
         // D(theta_h) - using D_GTR_2 (eq 8 from Physically based Shading at Disney)
-        float alpha = roughness * roughness;
+        float alpha = alphaGGX();
         float alpha_sq = alpha * alpha;
         float denom_rt = (1.0f + (alpha_sq - 1.0f) * ndoth * ndoth);
         float D = alpha_sq / (float(M_PI) * denom_rt * denom_rt);
@@ -176,7 +311,7 @@ struct Material
 
         // specular term
         // D(theta_h) - using D_GTR_2 (eq 8 from Physically based Shading at Disney)
-        float alpha = roughness * roughness;
+        float alpha = alphaGGX();
         float alpha_sq = alpha * alpha;
         float denom_rt = (1.0f + (alpha_sq - 1.0f) * ndoth * ndoth);
         float D = alpha_sq / (float(M_PI) * denom_rt * denom_rt);
@@ -227,11 +362,32 @@ struct Material
         return lerp(primitive_color_mix, color, shading_color);
         }
 
+    //! Fraction of light surviving absorption along a path inside the material
+    /*! \param shading_color Color of the primitive
+        \param distance Distance travelled inside the material
+
+        Beer-Lambert absorption, parameterized so that the material color is the color seen
+        through one \a transmission_distance of it: the surviving fraction is
+        ``color ** (distance / transmission_distance)``. Twice the distance squares the color,
+        which is what makes thick parts of a solid read as deeper in color than thin ones.
+    */
+    DEVICE RGB<float> absorption(const RGB<float>& shading_color, float distance) const
+        {
+        const RGB<float> tint = getColor(shading_color);
+        const float d = distance / fmaxf(transmission_distance, 1e-6f);
+
+        // hold the base away from zero so that a fully absorbing channel reaches 0 rather
+        // than raising 0 to the power 0 at a grazing hit
+        return RGB<float>(powf(fmaxf(tint.r, 1e-6f), d),
+                          powf(fmaxf(tint.g, 1e-6f), d),
+                          powf(fmaxf(tint.b, 1e-6f), d));
+        }
+
     DEVICE vec3<float> importanceSampleGGX(vec2<float> xi, vec3<float> v, vec3<float> n) const
         {
         // use eq 9 from "Physically based shading at Disney" to compute the random direction to
         // sample
-        float alpha = roughness * roughness;
+        float alpha = alphaGGX();
         float phi = 2.0f * float(M_PI) * xi.x;
         float cos_theta = sqrtf((1.0f - xi.y) / (1.0f + (alpha * alpha - 1.0f) * xi.y));
         float sin_theta = sqrt(1.0f - cos_theta * cos_theta);
@@ -240,19 +396,82 @@ struct Material
         vec3<float> h_t(sin_theta * cosf(phi), sin_theta * sinf(phi), cos_theta);
 
         // convert tangent space to world space
-        vec3<float> up(0, 0, 1.0f);
-        if (fabs(n.z) > 0.999)
-            up = vec3<float>(1.0f, 0, 0);
-        vec3<float> t_x = cross(up, n);
-        // TODO: normalize method in vectormath
-        t_x = t_x / sqrtf(dot(t_x, t_x));
-        vec3<float> t_y = cross(n, t_x);
+        vec3<float> t_x, t_y;
+        tangent_frame(t_x, t_y, n);
 
         vec3<float> h = t_x * h_t.x + t_y * h_t.y + n * h_t.z;
 
         // convert from half vector to l vector
         vec3<float> l = 2.0f * dot(v, h) * h - v;
         return l;
+        }
+
+    //! Smith masking-shadowing term for one direction against this material's roughness
+    DEVICE float smithG1(float cos_w) const
+        {
+        return smith_g1_ggx(cos_w, roughness * roughness);
+        }
+
+    //! Sample a microfacet normal from the distribution of visible normals
+    /*! \param xi Two uniform random numbers
+        \param v Vector pointing back toward the viewing direction
+        \param n Normal vector, on the same side as \a v
+
+        \returns A microfacet normal to scatter about.
+
+        Sampling the visible normals (Heitz, "Sampling the GGX Distribution of Visible
+        Normals", JCGT 2018) rather than the whole distribution draws only facets that \a v
+        can actually see. It makes the single sample weight of a microfacet BSDF collapse to
+        the Smith term for the sampled direction, and it does not generate the facets facing
+        away from the viewer that sampling the full distribution wastes on.
+
+        A perfectly smooth material has only one microfacet normal, the surface normal itself,
+        which is what makes roughness 0 reproduce a sharp interface exactly.
+
+        NOTE: importanceSampleGGX() above still samples the full distribution. Moving the
+        opaque lobe over to visible normals would lower its variance too, but it draws
+        different directions for the same random numbers and so changes every rendered image.
+    */
+    DEVICE vec3<float> sampleVisibleNormalGGX(vec2<float> xi, vec3<float> v, vec3<float> n) const
+        {
+        const float alpha = roughness * roughness;
+
+        if (alpha < 1e-4f)
+            return n;
+
+        vec3<float> t_x, t_y;
+        tangent_frame(t_x, t_y, n);
+
+        // work in the tangent frame, with n as the z axis
+        const vec3<float> v_t(dot(v, t_x), dot(v, t_y), dot(v, n));
+
+        // stretch the view direction so that the ellipsoid becomes a hemisphere
+        vec3<float> vh(alpha * v_t.x, alpha * v_t.y, v_t.z);
+        vh = vh * fast::rsqrt(dot(vh, vh));
+
+        // an orthonormal basis around the stretched view direction
+        const float lensq = vh.x * vh.x + vh.y * vh.y;
+        const vec3<float> t1 = (lensq > 1e-8f) ? vec3<float>(-vh.y, vh.x, 0.0f) * fast::rsqrt(lensq)
+                                               : vec3<float>(1.0f, 0.0f, 0.0f);
+        const vec3<float> t2 = cross(vh, t1);
+
+        // a uniform point on the disk, squashed to account for the projection
+        const float r = sqrtf(xi.x);
+        const float phi = 2.0f * float(M_PI) * xi.y;
+        const float p1 = r * cosf(phi);
+        float p2 = r * sinf(phi);
+        const float lerp_s = 0.5f * (1.0f + vh.z);
+        p2 = (1.0f - lerp_s) * sqrtf(fmaxf(0.0f, 1.0f - p1 * p1)) + lerp_s * p2;
+
+        // lift the point onto the hemisphere
+        const vec3<float> nh
+            = p1 * t1 + p2 * t2 + sqrtf(fmaxf(0.0f, 1.0f - p1 * p1 - p2 * p2)) * vh;
+
+        // unstretch, back to the original ellipsoid
+        vec3<float> h_t(alpha * nh.x, alpha * nh.y, fmaxf(0.0f, nh.z));
+        h_t = h_t * fast::rsqrt(dot(h_t, h_t));
+
+        return t_x * h_t.x + t_y * h_t.y + n * h_t.z;
         }
 
     DEVICE float pdfGGX(vec3<float> l, vec3<float> v, vec3<float> n) const
@@ -265,7 +484,7 @@ struct Material
         float ndoth = dot(n, h); // cos(theta_h)
 
         // D(theta_h) - using D_GTR_2 (eq 8 from Physically based Shading at Disney)
-        float alpha = roughness * roughness;
+        float alpha = alphaGGX();
         float alpha_sq = alpha * alpha;
         float denom_rt = (1.0f + (alpha_sq - 1.0f) * ndoth * ndoth);
         float D = alpha_sq / (float(M_PI) * denom_rt * denom_rt);
@@ -290,13 +509,8 @@ struct Material
         vec3<float> v_t(x, y, sqrt(1.0f - xi.x));
 
         // convert tangent space to world space
-        vec3<float> up(0, 0, 1.0f);
-        if (fabs(n.z) > 0.999)
-            up = vec3<float>(1.0f, 0, 0);
-        vec3<float> t_x = cross(up, n);
-        // TODO: normalize method in vectormath
-        t_x = t_x / sqrtf(dot(t_x, t_x));
-        vec3<float> t_y = cross(n, t_x);
+        vec3<float> t_x, t_y;
+        tangent_frame(t_x, t_y, n);
 
         vec3<float> l = t_x * v_t.x + t_y * v_t.y + n * v_t.z;
 

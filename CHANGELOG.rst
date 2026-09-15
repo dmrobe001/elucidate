@@ -9,6 +9,59 @@ fresnel_ releases follow `semantic versioning`_.
 .. _fresnel:  https://github.com/glotzerlab/fresnel
 .. _semantic versioning: https://semver.org/
 
+Unreleased
+^^^^^^^^^^
+
+*Added*
+
+* ``Material.ior``, the index of refraction of a material's interior. Defaults
+  to 1.5, the value for glass.
+* Refraction. Transmitted rays bend by Snell's law, and a transmissive surface
+  reflects or refracts according to the Fresnel reflectance of the interface,
+  including total internal reflection.
+* ``Material.transmission_distance``, the distance over which the interior of a
+  transmissive material absorbs light down to ``color``. Absorption follows
+  Beer-Lambert, so thick parts of a solid render deeper in color than thin
+  ones.
+* Rough transmission. A transmissive surface scatters about a microfacet normal
+  drawn from the distribution of visible normals, so ``roughness`` frosts it.
+* Shade back faces. Hits on the inside of a solid shade like any other hit
+  instead of being dropped, which is a prerequisite for refraction.
+* The background shows through transmissive materials and in mirror
+  reflections. It remains a backdrop rather than an environment light, so it
+  does not light diffuse surfaces and opaque scenes render unchanged.
+
+*Changed*
+
+* ``spec_trans`` now selects a dielectric interface rather than passing rays
+  through undeviated. Scenes that set ``spec_trans`` render differently.
+* ``roughness`` applies to transmission as well as reflection. A transmissive
+  material left at the default roughness now renders frosted; set
+  ``roughness=0`` for clear glass.
+* A transmissive material tints light by absorbing along the path inside it
+  rather than by tinting each crossing of its surface, so the depth of color
+  now depends on how far the light travelled through the solid. ``color`` is
+  the color seen through one ``transmission_distance``; the previous
+  appearance corresponded to a crossing of exactly that distance.
+* Intersection routines report the geometric normal, pointing out of the
+  primitive whichever side the ray struck, rather than one pre-flipped toward
+  the ray. The tracers flip it to the viewing side for shading. Rendered
+  output is unchanged for front faces.
+
+*Fixed*
+
+* ``Material`` left ``spec_trans`` uninitialized, so the default material each
+  geometry installs on construction carried an indeterminate value.
+* The GGX distribution evaluated to 0/0 at normal incidence for roughness at or
+  below about 0.01, and the resulting NaN spread through the image.
+
+*Removed*
+
+* The OptiX GPU backend. It targeted the OptiX 6 API, which was removed in
+  OptiX 7, so it could no longer be built against any current release. The
+  ``gpu`` execution mode and the backend-neutral device code in
+  ``fresnel/common/`` remain in place for a replacement backend.
+
 0.13.8 (2025-09-03)
 ^^^^^^^^^^^^^^^^^^^
 

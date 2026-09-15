@@ -1,5 +1,7 @@
 set(files conftest.py
           pytest.ini
+          test_absorption.py
+          test_backfaces.py
           test_camera_orthographic.py
           test_camera_perspective.py
           test_device.py
@@ -12,6 +14,8 @@ set(files conftest.py
           test_light.py
           test_material.py
           test_outline_material.py
+          test_refraction.py
+          test_rough_transmission.py
           test_scene.py
           test_tracer_direct.py
           test_tracer_path.py)
