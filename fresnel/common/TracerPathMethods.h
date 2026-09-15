@@ -41,12 +41,12 @@ struct PRDpath
     bool specular_path;
     };
 
-DEVICE void path_tracer_miss(PRDpath& prd,
-                             const RGB<float>& _background_color,
-                             const float _background_alpha,
-                             unsigned int _light_samples,
-                             const Lights& _lights,
-                             const vec3<float>& ray_direction)
+DEVICE inline void path_tracer_miss(PRDpath& prd,
+                                    const RGB<float>& _background_color,
+                                    const float _background_alpha,
+                                    unsigned int _light_samples,
+                                    const Lights& _lights,
+                                    const vec3<float>& ray_direction)
 
     {
     if (prd.depth == 0)
@@ -91,19 +91,19 @@ DEVICE void path_tracer_miss(PRDpath& prd,
     prd.done = true;
     }
 
-DEVICE void path_tracer_hit(PRDpath& prd,
-                            const Material& _material,
-                            const Material& _outline_material,
-                            const float _shading_distance,
-                            const float _outline_width,
-                            const RGB<float>& _shading_color,
-                            const vec3<float>& _shading_normal,
-                            const vec3<float>& ray_origin,
-                            const vec3<float>& ray_direction,
-                            const float _t_hit,
-                            const RayGen& ray_gen,
-                            const unsigned int _n_samples,
-                            const unsigned int _light_samples)
+DEVICE inline void path_tracer_hit(PRDpath& prd,
+                                   const Material& _material,
+                                   const Material& _outline_material,
+                                   const float _shading_distance,
+                                   const float _outline_width,
+                                   const RGB<float>& _shading_color,
+                                   const vec3<float>& _shading_normal,
+                                   const vec3<float>& ray_origin,
+                                   const vec3<float>& ray_direction,
+                                   const float _t_hit,
+                                   const RayGen& ray_gen,
+                                   const unsigned int _n_samples,
+                                   const unsigned int _light_samples)
     {
     Material m;
 

@@ -3,8 +3,6 @@
 
 """The fresnel ray tracing package."""
 
-import os
-
 import numpy
 
 from . import (
@@ -111,9 +109,7 @@ class Device(object):
         # initialize the device
         if selected_mode == "gpu":
             self.module = _gpu
-            self._device = _gpu.Device(
-                os.path.dirname(os.path.realpath(__file__)), thread_limit
-            )
+            self._device = _gpu.Device(thread_limit)
             self._mode = "gpu"
         elif selected_mode == "cpu":
             self.module = _cpu
