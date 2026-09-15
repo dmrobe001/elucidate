@@ -9,6 +9,33 @@ fresnel_ releases follow `semantic versioning`_.
 .. _fresnel:  https://github.com/glotzerlab/fresnel
 .. _semantic versioning: https://semver.org/
 
+Unreleased
+^^^^^^^^^^
+
+*Added*
+
+* Shade back faces. Hits on the inside of a solid shade like any other hit
+  instead of being dropped, which is a prerequisite for refraction.
+
+*Changed*
+
+* Intersection routines report the geometric normal, pointing out of the
+  primitive whichever side the ray struck, rather than one pre-flipped toward
+  the ray. The tracers flip it to the viewing side for shading. Rendered
+  output is unchanged for front faces.
+
+*Fixed*
+
+* ``Material`` left ``spec_trans`` uninitialized, so the default material each
+  geometry installs on construction carried an indeterminate value.
+
+*Removed*
+
+* The OptiX GPU backend. It targeted the OptiX 6 API, which was removed in
+  OptiX 7, so it could no longer be built against any current release. The
+  ``gpu`` execution mode and the backend-neutral device code in
+  ``fresnel/common/`` remain in place for a replacement backend.
+
 0.13.8 (2025-09-03)
 ^^^^^^^^^^^^^^^^^^^
 

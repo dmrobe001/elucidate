@@ -209,18 +209,10 @@ void GeometryPolygon::intersect(const struct RTCIntersectFunctionNArguments* arg
         rh.hit.geomID = geom->m_geom_id;
         rh.hit.primID = args->primID;
 
-        // make polygons double sided
-        vec3<float> n_flip;
-        if (dot(n, ray_dir_local) < 0.0f)
-            {
-            n_flip = n;
-            }
-        else
-            {
-            n_flip = -n;
-            }
-
-        vec3<float> Ng = rotate(q_world, n_flip);
+        // Polygons are double sided, but report the geometric normal of the plane rather than
+        // one flipped toward the ray. The tracers flip it to the viewing side for shading and
+        // use the unflipped normal to tell which face was hit.
+        vec3<float> Ng = rotate(q_world, n);
 
         rh.hit.Ng_x = Ng.x;
         rh.hit.Ng_y = Ng.y;

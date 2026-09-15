@@ -32,6 +32,11 @@ namespace fresnel
 
     Output arguments \a d and \a N are set when the intersection routine returns true.
     \a t may be set even if there is no intersection.
+
+    \a N is the *geometric* normal: it always points out of the sphere, including when the ray
+    origin is inside and the hit is therefore on a back face. Callers that need a normal on the
+    same side as the incoming ray must flip it themselves (see \a shading_normal in
+    TracerPathMethods.h).
 */
 DEVICE inline bool intersect_ray_sphere(float& t,
                                         float& d_edge,
@@ -76,7 +81,7 @@ DEVICE inline bool intersect_ray_sphere(float& t,
     t = b + det;
     if (t > sphere_epsilon)
         {
-        N = -(o + t * d - p);
+        N = o + t * d - p;
         return true;
         }
 

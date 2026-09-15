@@ -102,8 +102,18 @@ DEVICE void path_tracer_hit(PRDpath& prd,
         m = _outline_material;
         }
 
+    // Geometry reports the *geometric* normal, which points out of the primitive whichever side
+    // the ray struck. Flip it to the side the ray arrived from before shading, and remember
+    // which face was hit: a back face is the far wall of a solid seen from the inside, which is
+    // exactly where a transmitted path continues.
     vec3<float> n = _shading_normal * fast::rsqrt(dot(_shading_normal, _shading_normal));
     vec3<float> v = -vec3<float>(ray_direction);
+
+    const bool backfacing = (dot(n, v) < 0.0f);
+    if (backfacing)
+        {
+        n = -n;
+        }
 
     if (m.isSolid())
         {
@@ -140,9 +150,10 @@ DEVICE void path_tracer_hit(PRDpath& prd,
             {
             float ndotl = dot(n, l);
 
-            // When n dot v is less than 0, this is coming through the back of the surface
-            // skip this sample
-            if (dot(n, v) > 0.0f && ndotl > 0.0f)
+            // n faces the viewer by construction, so only the sampled light direction can end
+            // up behind the surface. Back faces are shaded rather than dropped: terminating
+            // them here would black out every path that continues inside a solid.
+            if (ndotl > 0.0f)
                 {
                 prd.attenuation *= m.brdf(l, v, n, _shading_color) * ndotl * factor;
                 }
