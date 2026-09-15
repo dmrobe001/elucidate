@@ -127,24 +127,35 @@ DEVICE void path_tracer_hit(PRDpath& prd,
         // when the ray hits an object with a normal material, update the attenuation using the BRDF
         // choose a random direction l to continue the path.
         float factor = 1.0;
-        bool transmit = false;
+        ScatterEvent event = scatter_diffuse_or_glossy;
 
-        vec3<float> l = ray_gen.MISReflectionTransmission(factor,
-                                                          transmit,
-                                                          v,
-                                                          n,
-                                                          prd.depth,
-                                                          (_n_samples - 1) * _light_samples
-                                                              + prd.light_sample,
-                                                          m);
-        if (transmit)
+        vec3<float> l
+            = ray_gen.sampleScatterDirection(factor,
+                                             event,
+                                             v,
+                                             n,
+                                             backfacing,
+                                             prd.depth,
+                                             (_n_samples - 1) * _light_samples + prd.light_sample,
+                                             m);
+
+        if (event == scatter_specular_transmission)
             {
-            // perfect transmission
+            // Tint the transmitted ray. Entry and exit each apply the square root so that a
+            // full crossing multiplies to the material color.
+            // TODO: replace with distance dependent Beer-Lambert absorption, which is what
+            // makes thick parts of a solid read as deeper in color than thin ones.
             RGB<float> trans_color = m.getColor(_shading_color);
             trans_color.r = sqrtf(trans_color.r);
             trans_color.g = sqrtf(trans_color.g);
             trans_color.b = sqrtf(trans_color.b);
-            prd.attenuation *= trans_color;
+            prd.attenuation *= trans_color * factor;
+            }
+        else if (event == scatter_specular_reflection)
+            {
+            // Reflection off a dielectric interface is not tinted by the body color: it is
+            // light that never entered the material.
+            prd.attenuation *= factor;
             }
         else
             {

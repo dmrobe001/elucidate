@@ -97,23 +97,34 @@ class RayGen
         return l;
         }
 
-    //! Multiple importance sampling of reflected and transmitted rays
+    //! Sample a scattered direction from a material
     /*! \returns The direction to sample next
         \param factor [output] Weighting factor for the sample
-        \param transmit [output] True when transmission is selected, False for reflection
+        \param event [output] Which lobe the direction was drawn from
         \param v Vector pointing back toward the viewing direction
-        \param n Normal vector
+        \param n Normal vector, on the same side as \a v
+        \param backfacing True when the ray struck the inside of the surface
         \param depth Depth of the ray in the trace
         \param sample Sample index
         \param m Material
+
+        The material is a mixture of an opaque lobe and a smooth dielectric interface, selected
+        with probability \a spec_trans. Because each lobe is chosen with the same probability
+        as its weight in the mixture, the selection probability cancels and \a factor carries
+        only the lobe's own weight.
+
+        The dielectric lobe splits again into reflection and refraction, chosen with the Fresnel
+        reflectance so that both branches carry unit weight. \a factor then holds only the
+        radiance scaling across the interface.
     */
-    DEVICE vec3<float> MISReflectionTransmission(float& factor,
-                                                 bool& transmit,
-                                                 const vec3<float>& v,
-                                                 const vec3<float>& n,
-                                                 unsigned int depth,
-                                                 unsigned int sample,
-                                                 const Material& m) const
+    DEVICE vec3<float> sampleScatterDirection(float& factor,
+                                              ScatterEvent& event,
+                                              const vec3<float>& v,
+                                              const vec3<float>& n,
+                                              bool backfacing,
+                                              unsigned int depth,
+                                              unsigned int sample,
+                                              const Material& m) const
         {
         r123::Philox4x32 rng;
         r123::Philox4x32::ctr_type rng_counter = {{0, depth, sample, rng_val_mis}};
@@ -125,15 +136,44 @@ class RayGen
         float choice_trans = r123::u01<float>(rng_u.v[3]);
 
         vec3<float> l;
-        transmit = (choice_trans <= m.spec_trans);
-        if (transmit)
+        if (choice_trans <= m.spec_trans)
             {
-            // hard code perfect transmission
-            l = -v;
+            // A ray on its way out of the material meets the same interface from the dense
+            // side, so the two indices swap.
+            const float eta_i = backfacing ? m.ior : 1.0f;
+            const float eta_t = backfacing ? 1.0f : m.ior;
+            const float eta = eta_i / eta_t;
+
+            const float F = fresnel_dielectric(dot(n, v), eta_i, eta_t);
+
+            // the dielectric lobe is a pair of deltas and needs only one random number, so
+            // reuse the first component of the sample the opaque lobe would have used
+            bool reflect = (xi.x < F);
+            if (!reflect)
+                {
+                // total internal reflection leaves the mirror direction as the only option
+                reflect = !refract(l, v, n, eta);
+                }
+
+            if (reflect)
+                {
+                event = scatter_specular_reflection;
+                l = 2.0f * dot(n, v) * n - v;
+                factor = 1.0f;
+                }
+            else
+                {
+                event = scatter_specular_transmission;
+
+                // radiance is compressed on the way into a denser medium and expanded again
+                // on the way out, so a full crossing multiplies back to 1
+                factor = eta * eta;
+                }
             }
         else
             {
             // handle reflection with multiple importance sampling
+            event = scatter_diffuse_or_glossy;
             if (choice_mis <= 0.5f)
                 {
                 // diffuse sampling

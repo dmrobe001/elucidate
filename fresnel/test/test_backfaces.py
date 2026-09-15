@@ -43,6 +43,10 @@ def _cube_scene(device, spec_trans=0.0):
         solid=0.0,
         color=fresnel.color.linear([0.1, 0.8, 0.3]),
         spec_trans=spec_trans,
+        # matched index, so transmission passes straight through. These tests are
+        # about which hits shade, not about refraction; test_refraction.py covers
+        # what an index contrast does.
+        ior=1.0,
     )
 
     return scene

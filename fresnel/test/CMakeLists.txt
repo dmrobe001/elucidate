@@ -13,6 +13,7 @@ set(files conftest.py
           test_light.py
           test_material.py
           test_outline_material.py
+          test_refraction.py
           test_scene.py
           test_tracer_direct.py
           test_tracer_path.py)

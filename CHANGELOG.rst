@@ -14,11 +14,19 @@ Unreleased
 
 *Added*
 
+* ``Material.ior``, the index of refraction of a material's interior. Defaults
+  to 1.5, the value for glass.
+* Refraction. Transmitted rays bend by Snell's law, and a transmissive surface
+  reflects or refracts according to the Fresnel reflectance of the interface,
+  including total internal reflection.
 * Shade back faces. Hits on the inside of a solid shade like any other hit
   instead of being dropped, which is a prerequisite for refraction.
 
 *Changed*
 
+* ``spec_trans`` now selects a smooth dielectric interface rather than passing
+  rays through undeviated. Scenes that set ``spec_trans`` render differently:
+  set ``ior=1`` to keep the previous appearance.
 * Intersection routines report the geometric normal, pointing out of the
   primitive whichever side the ray struck, rather than one pre-flipped toward
   the ray. The tracers flip it to the viewing side for shading. Rendered

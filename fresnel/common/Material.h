@@ -32,6 +32,70 @@ DEVICE inline float schlick(float x)
     return v_fifth;
     }
 
+//! Fresnel reflectance of a smooth dielectric interface
+/*! \param cos_i Cosine of the angle between the incident direction and the normal
+    \param eta_i Index of refraction on the side the ray arrives from
+    \param eta_t Index of refraction on the side the ray would transmit into
+
+    \returns The fraction of unpolarized light reflected by the interface, 1 under total
+    internal reflection.
+
+    This is the full Fresnel equation for dielectrics rather than the Schlick approximation
+    used by the opaque BRDF. Schlick's form does not reach 1 at the critical angle, so it
+    cannot represent total internal reflection, which is a large part of how glass reads.
+*/
+DEVICE inline float fresnel_dielectric(float cos_i, float eta_i, float eta_t)
+    {
+    cos_i = fminf(fmaxf(cos_i, 0.0f), 1.0f);
+
+    const float eta = eta_i / eta_t;
+    const float sin2_t = eta * eta * (1.0f - cos_i * cos_i);
+
+    // total internal reflection: no transmitted direction exists
+    if (sin2_t >= 1.0f)
+        return 1.0f;
+
+    const float cos_t = sqrtf(1.0f - sin2_t);
+
+    const float r_parl = (eta_t * cos_i - eta_i * cos_t) / (eta_t * cos_i + eta_i * cos_t);
+    const float r_perp = (eta_i * cos_i - eta_t * cos_t) / (eta_i * cos_i + eta_t * cos_t);
+
+    return 0.5f * (r_parl * r_parl + r_perp * r_perp);
+    }
+
+//! Refract a direction through a smooth interface
+/*! \param l [output] The refracted direction, set only when this returns true
+    \param v Direction pointing back along the incoming ray
+    \param n Normal, on the same side as \a v
+    \param eta Ratio of the incident index of refraction to the transmitted one
+
+    \returns True when the ray refracts, false under total internal reflection.
+*/
+DEVICE inline bool
+refract(vec3<float>& l, const vec3<float>& v, const vec3<float>& n, const float eta)
+    {
+    const float cos_i = dot(n, v);
+    const float sin2_t = eta * eta * (1.0f - cos_i * cos_i);
+
+    if (sin2_t >= 1.0f)
+        return false;
+
+    const float cos_t = sqrtf(1.0f - sin2_t);
+    l = -eta * v + (eta * cos_i - cos_t) * n;
+    return true;
+    }
+
+//! Which lobe of a material a sampled direction was drawn from
+/*! The path tracer weights the sample differently for each: the opaque lobe still needs its
+    BRDF and cosine applied, while the two delta lobes come back already weighted.
+*/
+enum ScatterEvent
+    {
+    scatter_diffuse_or_glossy, //!< The opaque BRDF
+    scatter_specular_reflection, //!< Mirror reflection off a dielectric interface
+    scatter_specular_transmission //!< Refraction through a dielectric interface
+    };
+
 //! Material properties
 /*! Material is a plain old data struct that holds material properties, and a few methods for
    computing an output brdf based on input vectors.
@@ -53,18 +117,19 @@ struct Material
     float specular; //!< Set to 0 for no specular highlights, 1 for strong highlights
     float metal; //!< Set to 0 for dielectric materials, set to 1 for metals
     float spec_trans; //!< Set to 0 for solid materials, 1 for fully transmissive
+    float ior; //!< Index of refraction of the material's interior
 
     //! Default constructor gives a plain dielectric material
     DEVICE Material()
         : solid(0.0f), color(RGB<float>(0.9f, 0.9f, 0.9f)), primitive_color_mix(0.0f),
-          roughness(0.1f), specular(0.5f), metal(0.0f), spec_trans(0.0f)
+          roughness(0.1f), specular(0.5f), metal(0.0f), spec_trans(0.0f), ior(1.5f)
         {
         }
 
     //! Set material parameters
     DEVICE explicit Material(const RGB<float> _color, float _solid = 0.0f)
         : solid(_solid), color(_color), primitive_color_mix(0.0f), roughness(0.1f), specular(0.5f),
-          metal(0.0f), spec_trans(0.0f)
+          metal(0.0f), spec_trans(0.0f), ior(1.5f)
         {
         }
 
