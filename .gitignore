@@ -13,3 +13,6 @@ compile_commands.json
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+
+# python virtualenv created by the session start hook
+.venv
