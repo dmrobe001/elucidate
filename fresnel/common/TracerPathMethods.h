@@ -162,17 +162,23 @@ DEVICE void path_tracer_hit(PRDpath& prd,
                                              (_n_samples - 1) * _light_samples + prd.light_sample,
                                              m);
 
-        if (event == scatter_specular_transmission)
+        if (event == scatter_specular_transmission || event == scatter_specular_reflection)
             {
-            // The interface itself is clear. Color comes from absorption along the path
-            // inside the material, applied above on arriving at the far wall, so crossing
-            // the boundary only rescales radiance.
-            prd.attenuation *= factor;
-            }
-        else if (event == scatter_specular_reflection)
-            {
-            // Reflection off a dielectric interface is not tinted by the body color: it is
-            // light that never entered the material.
+            // A rough interface can hand back a direction on the wrong side of the surface:
+            // a facet reflecting into the surface it belongs to, or refracting back out of
+            // the side the ray arrived from. Those samples carry no light, so end the path
+            // here instead of tracing a bounce that cannot contribute.
+            if (factor <= 0.0f)
+                {
+                prd.attenuation = RGB<float>(0, 0, 0);
+                prd.done = true;
+                return;
+                }
+
+            // Neither is tinted by the body color. Reflection is light that never entered
+            // the material, and for transmission the color comes from absorption along the
+            // path inside it, applied above on arriving at the far wall, so crossing the
+            // boundary only rescales radiance.
             prd.attenuation *= factor;
             }
         else

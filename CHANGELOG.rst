@@ -23,6 +23,8 @@ Unreleased
   transmissive material absorbs light down to ``color``. Absorption follows
   Beer-Lambert, so thick parts of a solid render deeper in color than thin
   ones.
+* Rough transmission. A transmissive surface scatters about a microfacet normal
+  drawn from the distribution of visible normals, so ``roughness`` frosts it.
 * Shade back faces. Hits on the inside of a solid shade like any other hit
   instead of being dropped, which is a prerequisite for refraction.
 * The background shows through transmissive materials and in mirror
@@ -31,8 +33,11 @@ Unreleased
 
 *Changed*
 
-* ``spec_trans`` now selects a smooth dielectric interface rather than passing
-  rays through undeviated. Scenes that set ``spec_trans`` render differently.
+* ``spec_trans`` now selects a dielectric interface rather than passing rays
+  through undeviated. Scenes that set ``spec_trans`` render differently.
+* ``roughness`` applies to transmission as well as reflection. A transmissive
+  material left at the default roughness now renders frosted; set
+  ``roughness=0`` for clear glass.
 * A transmissive material tints light by absorbing along the path inside it
   rather than by tinting each crossing of its surface, so the depth of color
   now depends on how far the light travelled through the solid. ``color`` is

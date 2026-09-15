@@ -40,6 +40,8 @@ def _cube_scene(device, spec_trans=1.0, ior=1.5):
         color=fresnel.color.linear([0.1, 0.8, 0.3]),
         spec_trans=spec_trans,
         ior=ior,
+        # a sharp interface: test_rough_transmission.py covers what roughness does
+        roughness=0.0,
     )
 
     return scene
@@ -60,6 +62,7 @@ def _sphere_scene(device, ior):
         color=fresnel.color.linear([0.9, 0.9, 0.9]),
         spec_trans=1.0,
         ior=ior,
+        roughness=0.0,
     )
 
     scene.camera = fresnel.camera.Orthographic(
@@ -239,6 +242,7 @@ def _transmissive_sphere_scene(device, ior):
         color=fresnel.color.linear([0.9, 0.9, 0.9]),
         spec_trans=1.0,
         ior=ior,
+        roughness=0.0,
     )
 
     scene.camera = fresnel.camera.Orthographic(
@@ -294,6 +298,7 @@ def _backdrop_scene(device, ior=1.0, spec_trans=1.0, background=1.0):
         color=fresnel.color.linear([1.0, 1.0, 1.0]),
         spec_trans=spec_trans,
         ior=ior,
+        roughness=0.0,
     )
 
     scene.camera = fresnel.camera.Orthographic(

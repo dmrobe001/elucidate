@@ -24,7 +24,9 @@ class Material(object):
             value in the range [0, 1] to mix the two colors.
 
         roughness (float): Roughness of the material. Nominally in the range
-            [0.1, 1].
+            [0.1, 1]. Roughness applies to transmission as well as reflection,
+            so a transmissive material frosts as it roughens. Set to 0 for a
+            clear interface.
 
         specular (float): Control the strength of the specular highlights.
             Nominally in the range [0, 1].
@@ -138,7 +140,9 @@ class Material(object):
     def roughness(self):
         """float: Roughness of the material.
 
-        Nominally in the range [0.1, 1].
+        Nominally in the range [0.1, 1]. Roughness applies to transmission as
+        well as reflection, so a transmissive material frosts as it roughens.
+        Set to 0 for a clear interface.
         """
         return self._material.roughness
 

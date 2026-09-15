@@ -144,30 +144,50 @@ class RayGen
             const float eta_t = backfacing ? 1.0f : m.ior;
             const float eta = eta_i / eta_t;
 
-            const float F = fresnel_dielectric(dot(n, v), eta_i, eta_t);
+            // Matched indices are not a boundary at all, and a boundary that does not exist
+            // cannot be rough. Without this the microsurface would shadow light crossing
+            // between two identical media.
+            if (eta_i == eta_t)
+                {
+                event = scatter_specular_transmission;
+                factor = 1.0f;
+                return -v;
+                }
 
-            // the dielectric lobe is a pair of deltas and needs only one random number, so
-            // reuse the first component of the sample the opaque lobe would have used
-            bool reflect = (xi.x < F);
+            // Scatter about a microfacet normal rather than the surface normal. At roughness
+            // 0 the only visible facet is the surface itself and this is an exact mirror or
+            // an exact refraction; as roughness grows the interface frosts over.
+            const vec3<float> h = m.sampleVisibleNormalGGX(xi, v, n);
+
+            const float F = fresnel_dielectric(dot(h, v), eta_i, eta_t);
+
+            // reflect or refract with the Fresnel reflectance, so that the choice cancels
+            // and each branch is left carrying only the visibility of the facet it found
+            bool reflect = (choice_mis < F);
             if (!reflect)
                 {
                 // total internal reflection leaves the mirror direction as the only option
-                reflect = !refract(l, v, n, eta);
+                reflect = !refract(l, v, h, eta);
                 }
 
             if (reflect)
                 {
                 event = scatter_specular_reflection;
-                l = 2.0f * dot(n, v) * n - v;
-                factor = 1.0f;
+                l = 2.0f * dot(h, v) * h - v;
+
+                // a facet can reflect into the surface it belongs to; nothing escapes there
+                factor = (dot(n, l) > 0.0f) ? m.smithG1(dot(n, l)) : 0.0f;
                 }
             else
                 {
                 event = scatter_specular_transmission;
 
+                // likewise a facet can refract back out of the side the ray came from
+                factor = (dot(n, l) < 0.0f) ? m.smithG1(dot(n, l)) : 0.0f;
+
                 // radiance is compressed on the way into a denser medium and expanded again
                 // on the way out, so a full crossing multiplies back to 1
-                factor = eta * eta;
+                factor *= eta * eta;
                 }
             }
         else

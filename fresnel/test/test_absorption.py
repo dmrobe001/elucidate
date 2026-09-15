@@ -51,6 +51,8 @@ def _slab_scene(device, color, transmission_distance, ior=1.0):
         spec_trans=1.0,
         ior=ior,
         transmission_distance=transmission_distance,
+        # a sharp interface, so absorption is the only thing acting on the light
+        roughness=0.0,
     )
 
     scene.camera = fresnel.camera.Orthographic(

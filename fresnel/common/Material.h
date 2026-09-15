@@ -32,6 +32,40 @@ DEVICE inline float schlick(float x)
     return v_fifth;
     }
 
+//! Build an orthonormal tangent frame around a normal
+/*! \param t_x [output] First tangent
+    \param t_y [output] Second tangent
+    \param n Normal, assumed normalized
+
+    \a t_x, \a t_y and \a n form a right handed basis with \a n as the z axis.
+*/
+DEVICE inline void tangent_frame(vec3<float>& t_x, vec3<float>& t_y, const vec3<float>& n)
+    {
+    vec3<float> up(0, 0, 1.0f);
+    if (fabs(n.z) > 0.999)
+        up = vec3<float>(1.0f, 0, 0);
+    t_x = cross(up, n);
+    // TODO: normalize method in vectormath
+    t_x = t_x / sqrtf(dot(t_x, t_x));
+    t_y = cross(n, t_x);
+    }
+
+//! Smith masking-shadowing term for one direction on a GGX microsurface
+/*! \param cos_w Cosine of the angle between the direction and the surface normal
+    \param alpha GGX roughness parameter
+
+    \returns The fraction of the microsurface visible along the direction, 1 when smooth.
+*/
+DEVICE inline float smith_g1_ggx(float cos_w, float alpha)
+    {
+    cos_w = fabsf(cos_w);
+
+    const float alpha_sq = alpha * alpha;
+    const float cos_sq = cos_w * cos_w;
+
+    return 2.0f * cos_w / (cos_w + sqrtf(alpha_sq + cos_sq - alpha_sq * cos_sq));
+    }
+
 //! Fresnel reflectance of a smooth dielectric interface
 /*! \param cos_i Cosine of the angle between the incident direction and the normal
     \param eta_i Index of refraction on the side the ray arrives from
@@ -362,19 +396,82 @@ struct Material
         vec3<float> h_t(sin_theta * cosf(phi), sin_theta * sinf(phi), cos_theta);
 
         // convert tangent space to world space
-        vec3<float> up(0, 0, 1.0f);
-        if (fabs(n.z) > 0.999)
-            up = vec3<float>(1.0f, 0, 0);
-        vec3<float> t_x = cross(up, n);
-        // TODO: normalize method in vectormath
-        t_x = t_x / sqrtf(dot(t_x, t_x));
-        vec3<float> t_y = cross(n, t_x);
+        vec3<float> t_x, t_y;
+        tangent_frame(t_x, t_y, n);
 
         vec3<float> h = t_x * h_t.x + t_y * h_t.y + n * h_t.z;
 
         // convert from half vector to l vector
         vec3<float> l = 2.0f * dot(v, h) * h - v;
         return l;
+        }
+
+    //! Smith masking-shadowing term for one direction against this material's roughness
+    DEVICE float smithG1(float cos_w) const
+        {
+        return smith_g1_ggx(cos_w, roughness * roughness);
+        }
+
+    //! Sample a microfacet normal from the distribution of visible normals
+    /*! \param xi Two uniform random numbers
+        \param v Vector pointing back toward the viewing direction
+        \param n Normal vector, on the same side as \a v
+
+        \returns A microfacet normal to scatter about.
+
+        Sampling the visible normals (Heitz, "Sampling the GGX Distribution of Visible
+        Normals", JCGT 2018) rather than the whole distribution draws only facets that \a v
+        can actually see. It makes the single sample weight of a microfacet BSDF collapse to
+        the Smith term for the sampled direction, and it does not generate the facets facing
+        away from the viewer that sampling the full distribution wastes on.
+
+        A perfectly smooth material has only one microfacet normal, the surface normal itself,
+        which is what makes roughness 0 reproduce a sharp interface exactly.
+
+        NOTE: importanceSampleGGX() above still samples the full distribution. Moving the
+        opaque lobe over to visible normals would lower its variance too, but it draws
+        different directions for the same random numbers and so changes every rendered image.
+    */
+    DEVICE vec3<float> sampleVisibleNormalGGX(vec2<float> xi, vec3<float> v, vec3<float> n) const
+        {
+        const float alpha = roughness * roughness;
+
+        if (alpha < 1e-4f)
+            return n;
+
+        vec3<float> t_x, t_y;
+        tangent_frame(t_x, t_y, n);
+
+        // work in the tangent frame, with n as the z axis
+        const vec3<float> v_t(dot(v, t_x), dot(v, t_y), dot(v, n));
+
+        // stretch the view direction so that the ellipsoid becomes a hemisphere
+        vec3<float> vh(alpha * v_t.x, alpha * v_t.y, v_t.z);
+        vh = vh * fast::rsqrt(dot(vh, vh));
+
+        // an orthonormal basis around the stretched view direction
+        const float lensq = vh.x * vh.x + vh.y * vh.y;
+        const vec3<float> t1 = (lensq > 1e-8f) ? vec3<float>(-vh.y, vh.x, 0.0f) * fast::rsqrt(lensq)
+                                               : vec3<float>(1.0f, 0.0f, 0.0f);
+        const vec3<float> t2 = cross(vh, t1);
+
+        // a uniform point on the disk, squashed to account for the projection
+        const float r = sqrtf(xi.x);
+        const float phi = 2.0f * float(M_PI) * xi.y;
+        const float p1 = r * cosf(phi);
+        float p2 = r * sinf(phi);
+        const float lerp_s = 0.5f * (1.0f + vh.z);
+        p2 = (1.0f - lerp_s) * sqrtf(fmaxf(0.0f, 1.0f - p1 * p1)) + lerp_s * p2;
+
+        // lift the point onto the hemisphere
+        const vec3<float> nh
+            = p1 * t1 + p2 * t2 + sqrtf(fmaxf(0.0f, 1.0f - p1 * p1 - p2 * p2)) * vh;
+
+        // unstretch, back to the original ellipsoid
+        vec3<float> h_t(alpha * nh.x, alpha * nh.y, fmaxf(0.0f, nh.z));
+        h_t = h_t * fast::rsqrt(dot(h_t, h_t));
+
+        return t_x * h_t.x + t_y * h_t.y + n * h_t.z;
         }
 
     DEVICE float pdfGGX(vec3<float> l, vec3<float> v, vec3<float> n) const
@@ -412,13 +509,8 @@ struct Material
         vec3<float> v_t(x, y, sqrt(1.0f - xi.x));
 
         // convert tangent space to world space
-        vec3<float> up(0, 0, 1.0f);
-        if (fabs(n.z) > 0.999)
-            up = vec3<float>(1.0f, 0, 0);
-        vec3<float> t_x = cross(up, n);
-        // TODO: normalize method in vectormath
-        t_x = t_x / sqrtf(dot(t_x, t_x));
-        vec3<float> t_y = cross(n, t_x);
+        vec3<float> t_x, t_y;
+        tangent_frame(t_x, t_y, n);
 
         vec3<float> l = t_x * v_t.x + t_y * v_t.y + n * v_t.z;
 
