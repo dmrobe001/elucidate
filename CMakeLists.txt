@@ -112,15 +112,26 @@ if (ENABLE_EMBREE)
 
 endif()
 
-# The GPU backend is currently unimplemented. fresnel previously shipped an
-# OptiX 6 backend, but that API was removed in OptiX 7 and the code could no
-# longer be built against any current release. The backend-neutral device code
-# in fresnel/common/ and the `gpu` execution mode in fresnel/__init__.py are
-# retained so that a replacement backend can be dropped in without disturbing
-# the public API.
+option(ENABLE_CUDA "Use CUDA for ray tracing on the GPU" OFF)
 
-if (NOT ENABLE_EMBREE)
-    message(SEND_ERROR "No libraries will be built. Enable embree.")
+if (ENABLE_CUDA)
+    # CMAKE_CUDA_ARCHITECTURES has to be set before the language is enabled. The default covers
+    # Pascal through Ampere; set it on the command line to target something else.
+    if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+        set(CMAKE_CUDA_ARCHITECTURES "60;70;80" CACHE STRING "CUDA architectures to compile for")
+    endif()
+
+    enable_language(CUDA)
+    find_package(CUDAToolkit REQUIRED)
+    find_package_message(cuda "Found CUDA: ${CUDAToolkit_NVCC_EXECUTABLE} (version ${CUDAToolkit_VERSION})" "[${CUDAToolkit_NVCC_EXECUTABLE}][${CUDAToolkit_VERSION}]")
+
+    # --use_fast_math pairs with the fast:: namespace in fresnel/common, which selects the
+    # approximate intrinsics on the device
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --use_fast_math --expt-relaxed-constexpr")
+endif()
+
+if (NOT ENABLE_EMBREE AND NOT ENABLE_CUDA)
+    message(SEND_ERROR "No libraries will be built. Enable embree or CUDA.")
 endif()
 
 #############################################################################################

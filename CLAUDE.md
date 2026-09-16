@@ -20,6 +20,16 @@ ruff check fresnel/ && ruff format fresnel/           # Python lint and format
 clang-format --style=file -i <file>                   # C++ format
 ```
 
+The session hook configures the CPU backend only. To build the CUDA backend as well, configure a
+second tree in `build-cuda/`; nvcc needs a host compiler it supports, so pass
+`-DCMAKE_CUDA_HOST_COMPILER=` when the default `g++` is too new.
+
+```bash
+cmake -B build-cuda -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_CUDA=ON \
+    -DCMAKE_CUDA_ARCHITECTURES=70 -DCMAKE_CUDA_HOST_COMPILER=g++-12
+ninja -C build-cuda
+```
+
 Editing a Python file under `fresnel/` requires `ninja -C build` too: CMake copies the
 sources into the build tree, and pytest runs against the copies.
 
@@ -33,12 +43,25 @@ the RNG, the materials, every ray-primitive intersection routine, and the entire
 shading kernel (`path_tracer_hit` and `path_tracer_miss` in `TracerPathMethods.h`).
 
 `fresnel/cpu/` supplies only what a backend must: acceleration structure (Embree), buffer
-management, the per-pixel driver loop, and the pybind11 glue.
+management, the per-pixel driver loop, and the pybind11 glue. `fresnel/gpu/` supplies the same
+four things for CUDA: a Morton code LBVH in place of Embree, managed memory buffers, a megakernel
+per tracer, and its own pybind11 glue. It is built only when `ENABLE_CUDA=ON`, which is off by
+default.
 
-**Do not move backend-neutral logic into `fresnel/cpu/`.** A GPU backend is planned (see the
-open issue on the CUDA backend) and everything in `common/` is what it will reuse unchanged.
-Anything in `common/` must stay compilable for the device: keep `Material` a POD, keep new
-functions `DEVICE`-annotated, and avoid host-only headers.
+**Do not move backend-neutral logic into `fresnel/cpu/` or `fresnel/gpu/`.** Everything in
+`common/` is what both backends reuse unchanged. Anything in `common/` must stay compilable for
+the device: keep `Material` a POD, keep new functions `DEVICE`-annotated, and avoid host-only
+headers.
+
+`fresnel/gpu/` has one structural rule of its own: `TracerMethods.h` and `BVHBuild.h` hold the
+per-thread work as `DEVICE` functions and the `.cu` files are thin launch wrappers around them.
+That is what lets the device code be driven from the host, which is the only way to exercise it
+on a machine without a GPU. Do not inline those bodies back into the kernels.
+
+Because `common/RayGen.h` reaches Random123's `boxmuller.hpp`, which takes `CUDART_VERSION` to
+mean the CUDA math library will supply `sincospif`, any translation unit that includes both
+`cuda_runtime.h` and `RayGen.h` must be compiled by nvcc. That is why `module-gpu.cc` includes
+the tracer class headers but not `TracerMethods.h`.
 
 ### Two tracers, different capabilities
 
@@ -61,6 +84,9 @@ normal and distance, in `FresnelRTCIntersectContext` (`cpu/embree_platform.h`):
 
 - `d` — distance from the hit to the nearest primitive edge, for outline rendering
 - `shading_color` — per-primitive, per-face or barycentrically interpolated colour
+
+The GPU backend carries the same two in `HitInfo` (`gpu/cuda_platform.h`), which the traversal
+fills in directly since there is no ray query context to piggyback on.
 
 ### The material model
 
@@ -90,8 +116,14 @@ optimisation. Two known examples, both currently declined:
 - treating the background as an environment light rather than a backdrop
 
 The RNG is counter-based and keyed on `(pixel, seed, depth, sample)`, never on traversal
-order, so renders are reproducible across runs and machines. Preserve this: it is what lets a
-second backend be validated against the reference images.
+order, so renders are reproducible across runs and machines. Preserve this: it is what lets the
+GPU backend be validated against the reference images.
+
+`conftest.py` appends `("gpu", 1)` to the device fixture when `"gpu" in
+fresnel.Device.available_modes`, so a CUDA build runs the whole suite against both backends with
+no test changes. Where the two backends can legitimately disagree is an exact tie: two surfaces
+the same distance from the ray, where Embree and the LBVH visit the candidates in a different
+order. That is what the tolerance in `assert_image_approx_equal` absorbs.
 
 Tests added for the transmission work assert physical properties rather than snapshots —
 Fresnel at normal incidence, total internal reflection, the white furnace test, absorption

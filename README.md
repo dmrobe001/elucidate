@@ -1,7 +1,8 @@
 # fresnel
 
 **fresnel** is a python library for path tracing publication quality images of soft matter simulations in real time.
-**fresnel** renders on multi-core CPUs using Intel's [Embree](https://embree.github.io/) ray tracing kernels.
+**fresnel** renders on multi-core CPUs using Intel's [Embree](https://embree.github.io/) ray tracing kernels,
+and on NVIDIA GPUs using [CUDA](https://developer.nvidia.com/cuda-toolkit).
 Path tracing enables high quality global illumination and advanced rendering effects controlled by
 intuitive parameters (like *roughness*, *specular*, and *metal*).
 

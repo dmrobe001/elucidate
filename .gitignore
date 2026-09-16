@@ -2,6 +2,7 @@
 __pycache__
 devdoc
 build
+build-cuda
 *.pyc
 .pytest_cache
 html

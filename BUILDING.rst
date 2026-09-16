@@ -79,8 +79,8 @@ The sections below provide details on each of these steps.
 Install prerequisites
 ---------------------
 
-You will need to install a number of tools and libraries to build **fresnel**. The option
-``ENABLE_EMBREE`` requires additional libraries when enabled.
+You will need to install a number of tools and libraries to build **fresnel**. The options
+``ENABLE_EMBREE`` and ``ENABLE_CUDA`` each require additional libraries when enabled.
 
 Install the required dependencies:
 
@@ -126,6 +126,10 @@ Install additional packages needed to build the documentation:
 
   - **Intel TBB**
   - **Intel Embree**
+
+- For GPU execution (required when ``ENABLE_CUDA=ON``):
+
+  - **CUDA Toolkit** >= 11.0
 
 **Optional runtime dependencies:**
 
@@ -203,6 +207,9 @@ these options on the command line.
 Other option changes take effect at any time:
 
 - ``ENABLE_EMBREE`` - When enabled, build the CPU backend using Embree (default: ``on``).
+- ``ENABLE_CUDA`` - When enabled, build the GPU backend using CUDA (default: ``off``).
+- ``CMAKE_CUDA_ARCHITECTURES`` - Semicolon separated list of GPU architectures to compile for
+  (default: ``60;70;80``). Only used when ``ENABLE_CUDA=ON``.
 - ``CMAKE_BUILD_TYPE`` - Sets the build type (case sensitive) Options:
 
   - ``Debug`` - Compiles debug information into the library and executables. Enables asserts to

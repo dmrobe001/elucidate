@@ -77,6 +77,63 @@ install(TARGETS _cpu LIBRARY DESTINATION ${PYTHON_SITE_INSTALL_DIR})
 
 endif()
 
+# _gpu
+if (ENABLE_CUDA)
+
+target_compile_definitions(_common PUBLIC FRESNEL_BUILD_GPU)
+
+# host side: the device, buffers, geometry registry and pybind11 glue
+set(_gpu_sources
+     gpu/module-gpu.cc
+     gpu/Device.cc
+     gpu/Scene.cc
+     gpu/Geometry.cc
+     gpu/GeometryCylinder.cc
+     gpu/GeometryPolygon.cc
+     gpu/GeometryMesh.cc
+     gpu/GeometryConvexPolyhedron.cc
+     gpu/GeometrySphere.cc
+     gpu/Tracer.cc
+     gpu/Array.cc
+   )
+
+# device side: the acceleration structure build and the two render kernels
+set(_gpu_cuda_sources
+     gpu/BVH.cu
+     gpu/TracerDirect.cu
+     gpu/TracerPath.cu
+   )
+
+pybind11_add_module(_gpu "${_gpu_sources}" "${_gpu_cuda_sources}")
+target_link_libraries(_gpu PRIVATE CUDA::cudart)
+
+# link time optimization cannot see through the device code nvcc emits
+set_target_properties(_gpu PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF)
+
+if (_is_multi_config)
+    set_target_properties(_gpu PROPERTIES LIBRARY_OUTPUT_DIRECTORY  ${PROJECT_BINARY_DIR}/$<CONFIG>/${relative_dir})
+endif()
+
+if(APPLE)
+    set_target_properties(_gpu PROPERTIES INSTALL_RPATH "@loader_path;@loader_path/../../..")
+else()
+    set_target_properties(_gpu PROPERTIES INSTALL_RPATH "\$ORIGIN;\$ORIGIN/../../..")
+endif()
+
+if (WIN32)
+target_compile_definitions(_gpu PUBLIC _USE_MATH_DEFINES NOMINMAX R123_NO_SINCOS)
+
+# nvccfeatures.h hardcodes R123_USE_MULHILO64_ASM=1 for the host-side compile pass on the
+# assumption that nvcc always falls through to gcc; on Windows it falls through to MSVC, which
+# cannot compile GNU inline asm. Leaving the macro undefined here lets msvcfeatures.h's own
+# MSVC_INTRIN selection take effect instead.
+target_compile_definitions(_gpu PUBLIC R123_USE_MULHILO64_ASM=0)
+endif()
+
+install(TARGETS _gpu LIBRARY DESTINATION ${PYTHON_SITE_INSTALL_DIR})
+
+endif()
+
 #####################################################
 ### Python only modules
 
