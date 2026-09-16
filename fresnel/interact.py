@@ -109,7 +109,7 @@ class SceneView(QWidget):
     Whenever rendering restarts at a new camera position or window size,
     `SceneView` displays a `Preview` render of the scene while `Path`
     accumulates its first `PREVIEW_SAMPLES` samples, then switches to the path
-    traced image. The `Preview` tracer casts one ray per pixel and no secondary
+    traced image. The `Preview` tracer casts one ray per pixel and no scattered
     rays, so it keeps the view responsive while the camera moves.
 
     Args:

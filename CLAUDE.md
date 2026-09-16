@@ -65,10 +65,26 @@ the tracer class headers but not `TracerMethods.h`.
 
 ### Two tracers, different capabilities
 
-`tracer.Preview` (`TracerDirect`) shades one hit against the lights analytically, traces no
-secondary rays, and casts no shadow rays. `tracer.Path` (`TracerPath`) is the path tracer.
-Transmission, refraction and absorption only exist in the path tracer; `Preview` renders a
-transmissive material as opaque. This is documented on `Material` and is not a bug.
+`tracer.Preview` (`TracerDirect`) shades one hit against the lights analytically and casts no
+shadow rays. `tracer.Path` (`TracerPath`) is the path tracer.
+
+Both see through a transmissive material, but only the path tracer models one. `Preview`
+spends its one shading sample per hit on the surface it ends up on, so it cannot split that
+sample between an opaque lobe and a dielectric one: any `spec_trans` above 0 is fully
+transparent, the interface is smooth whatever the `roughness`, nothing reflects off it, and
+the color is `color` applied once per interface crossed rather than Beer-Lambert absorption
+over `transmission_distance`. `ior` bends light identically in both. The secondary rays
+`Preview` does trace are the continuation of the primary ray through those interfaces and
+nothing else — it still traces no scattered rays.
+
+The consequence to keep in mind is that `Preview` and `Path` agree on *what is see-through*
+and on *where it bends light to*, and deliberately disagree on the depth of its color. This
+is documented on `Material` and on `tracer.Preview`, and is not a bug.
+
+The per-hit body of the direct tracer lives in `common/TracerDirectMethods.h`, which is to
+`Preview` what `common/TracerPathMethods.h` is to `Path`. Only the traversal around it —
+`rtcIntersect1()` on the CPU, `bvh_intersect()` on the GPU — belongs to a backend, so a change
+to preview shading belongs in the common header and lands on both backends at once.
 
 ### Normals are geometric, never ray-facing
 
