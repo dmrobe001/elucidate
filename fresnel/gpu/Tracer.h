@@ -12,10 +12,77 @@
 #include "common/Camera.h"
 #include "common/ColorMath.h"
 
+#include <algorithm>
+#include <chrono>
+
 namespace fresnel
     {
 namespace gpu
     {
+//! Split a per-pixel kernel into row bands sized to stay under a target launch duration
+/*! A launch that runs too long on a display-driving (WDDM) GPU trips the driver's hang-detection
+    timeout, which resets the device and takes every process using it down with it. Neither the
+    image resolution nor the cost of any given pixel bounds a launch's duration on its own - a
+    complex scene at a middling resolution can be exactly as slow as a simple one at a large
+    resolution - so this measures each launch and adjusts the next one's size to hold a target
+    duration, rather than picking a fixed tile size.
+
+    Tracking a pixel budget rather than a row count means a resize is handled for free: the row
+    count a call asks for is recomputed from the budget and the new width every time, so a window
+    resize does not by itself invalidate what was learned about this GPU's throughput.
+
+    Splitting an image into row bands changes nothing about what any pixel computes: each launch
+    is passed the same width, height, and seed as an unsplit launch would have been, only a
+    different row_start/row_count, and every DEVICE routine keys its RNG draws on the pixel
+    coordinate, never on how the image happened to be divided up to compute it.
+*/
+class AdaptiveChunker
+    {
+    public:
+    //! Render an image in row bands, timing and resizing them to hold a target duration
+    /*! \param width Image width, in pixels
+        \param height Image height, in pixels
+        \param launch_rows Called as launch_rows(row_start, row_count) to render one band and
+               synchronize with it before returning, so the elapsed time reflects the device work
+    */
+    template<class F> void run(unsigned int width, unsigned int height, F launch_rows)
+        {
+        unsigned int row = 0;
+        while (row < height)
+            {
+            const unsigned int rows
+                = std::min(height - row, std::max(1u, m_pixel_budget / std::max(1u, width)));
+
+            const auto t0 = std::chrono::steady_clock::now();
+            launch_rows(row, rows);
+            const auto t1 = std::chrono::steady_clock::now();
+            const double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+            // hold the launch duration near target_ms: halve the budget on an overshoot so a
+            // single slow band cannot repeat, double it on a wide margin so a fast GPU is not
+            // held to an unnecessarily conservative tile size forever
+            if (ms > target_ms)
+                m_pixel_budget = std::max(min_pixel_budget, m_pixel_budget / 2);
+            else if (ms < target_ms * 0.25)
+                m_pixel_budget = std::min(max_pixel_budget, m_pixel_budget * 2);
+
+            row += rows;
+            }
+        }
+
+    private:
+    static constexpr double target_ms = 200.0; //!< Duration a launch should stay under
+    static constexpr unsigned int min_pixel_budget = 1024; //!< Never split finer than this
+    static constexpr unsigned int max_pixel_budget = 1u << 22; //!< Stop growing past this
+
+    //! Current estimate of how many pixels this GPU can shade within target_ms
+    /*! Deliberately conservative: the first launch after startup or a scene/camera change is a
+        guess with no data behind it yet, and the failure mode for guessing too high is a hung
+        GPU, so a wrong guess only ever costs a few extra launches of latency, never a crash.
+    */
+    unsigned int m_pixel_budget = min_pixel_budget;
+    };
+
 //! Base class for the raytracer
 /*! The base class Tracer specifies common methods used for all tracers. This includes output buffer
    management, and defining the rendering API.
@@ -85,6 +152,7 @@ class Tracer
     bool m_highlight_warning; //!< Set to true to enable highlight warnings in sRGB output
     RGB<float> m_highlight_warning_color; //!< The highlight warning color
     unsigned int m_seed = 0; //!< Random number seed
+    AdaptiveChunker m_chunker; //!< Splits each render() into launches sized for this GPU
     };
 
 //! Number of threads in a tracer kernel block
