@@ -106,6 +106,12 @@ class SceneView(QWidget):
     `SceneView` is a PySide2 widget that displays a `Scene`, rendering it with
     `Path` interactively. Use the mouse to rotate the camera view.
 
+    Whenever rendering restarts at a new camera position or window size,
+    `SceneView` displays a `Preview` render of the scene while `Path`
+    accumulates its first `PREVIEW_SAMPLES` samples, then switches to the path
+    traced image. The `Preview` tracer casts one ray per pixel and no secondary
+    rays, so it keeps the view responsive while the camera moves.
+
     Args:
         scene (`Scene`): The scene to display.
         max_samples (int): Sample a total of ``max_samples``.
@@ -168,6 +174,9 @@ class SceneView(QWidget):
     TIMEOUT = 100
     """Timeout for delayed actions to take effect."""
 
+    PREVIEW_SAMPLES = 4
+    """Number of path traced samples to take before replacing the preview."""
+
     def __init__(self, scene, max_samples=2000):
         super().__init__()
         self.setWindowTitle("fresnel: scene viewer")
@@ -186,9 +195,11 @@ class SceneView(QWidget):
         self._resize_timer.setSingleShot(True)
         self._resize_timer.timeout.connect(self._resize_done)
 
-        # initialize the tracer
+        # initialize the tracers
         self._tracer = tracer.Path(device=scene.device, w=10, h=10)
-        self._low_res_tracer = tracer.Path(device=scene.device, w=10, h=10)
+        self._preview_tracer = tracer.Preview(
+            device=scene.device, w=10, h=10, anti_alias=False
+        )
         self._is_rendering = False
         self._initial_resize = True
 
@@ -198,12 +209,17 @@ class SceneView(QWidget):
         # flag to notify view rotation
         self._camera_update_mode = None
         self._mouse_initial_pos = None
-        self._render_high_res = True
 
-        # timer to return to high res
-        self._low_res_timer = QtCore.QTimer(self)
-        self._low_res_timer.setSingleShot(True)
-        self._low_res_timer.timeout.connect(self._low_res_done)
+        # the preview needs to be rendered again at the current camera position
+        self._preview_stale = True
+
+        # while True, render only the preview
+        self._interacting = False
+
+        # timer to resume path tracing after an interaction
+        self._interaction_timer = QtCore.QTimer(self)
+        self._interaction_timer.setSingleShot(True)
+        self._interaction_timer.timeout.connect(self._interaction_done)
 
         self._camera_controller = _CameraController3D(self._scene.camera)
         self.ipython_display_formatter = "text"
@@ -219,15 +235,15 @@ class SceneView(QWidget):
         self._start_rendering()
 
     def _resize_done(self):
-        """Resize the tracer after a delay."""
-        # resize the tracer
+        """Resize the tracers after a delay."""
+        # resize the tracers
         self._tracer.resize(w=self.width(), h=self.height())
-        self._low_res_tracer.resize(w=self.width() // 4, h=self.height() // 4)
+        self._preview_tracer.resize(w=self.width(), h=self.height())
         self._start_rendering()
 
-    def _low_res_done(self):
-        """Done rendering in low resolution."""
-        self._render_high_res = True
+    def _interaction_done(self):
+        """Done interacting with the view."""
+        self._interacting = False
 
     def _stop_rendering(self):
         """Stop sampling the scene."""
@@ -242,7 +258,7 @@ class SceneView(QWidget):
         self._is_rendering = True
         self._samples = 0
         self._tracer.reset()
-        self._low_res_tracer.reset()
+        self._preview_stale = True
         self._repaint_timer.start()
 
     #####################################
@@ -261,22 +277,28 @@ class SceneView(QWidget):
         :meta private:
         """
         if self._is_rendering:
-            # Render the hi-res scene when not moving the camera
-            if self._render_high_res:
+            if self._preview_stale:
+                # Render the preview first so that this paint shows the scene
+                # at the current camera position without waiting for a sample
+                self._preview_tracer.render(self._scene)
+                self._preview_stale = False
+            elif not self._interacting:
                 self._tracer.render(self._scene)
 
                 self._samples += 1
                 if self._samples >= self._max_samples:
                     self._stop_rendering()
-            else:
-                # Render the low -res scene when moving the camera
-                self._low_res_tracer.render(self._scene)
 
-        # Display the active buffer
-        if self._render_high_res:
-            image_array = self._tracer.output
+        # Display the preview until the path traced image has accumulated
+        # enough samples to replace it
+        showing_preview = self._interacting or (
+            self._is_rendering and self._samples < self.PREVIEW_SAMPLES
+        )
+
+        if showing_preview:
+            image_array = self._preview_tracer.output
         else:
-            image_array = self._low_res_tracer.output
+            image_array = self._tracer.output
 
         # display the rendered scene in the widget
         image_array.buf.map()
@@ -362,7 +384,7 @@ class SceneView(QWidget):
         elif event.button() == QtCore.Qt.MiddleButton:
             self._camera_update_mode = "pan"
 
-        self._render_high_res = False
+        self._interacting = True
         self._start_rendering()
 
     def mouseReleaseEvent(self, event):  # noqa: N802 - allow Qt style naming
@@ -374,7 +396,7 @@ class SceneView(QWidget):
             self._camera_update_mode = None
             event.accept()
 
-        self._render_high_res = True
+        self._interacting = False
 
     def wheelEvent(self, event):  # noqa: N802 - allow Qt style naming
         """Respond to mouse wheel events.
@@ -387,7 +409,7 @@ class SceneView(QWidget):
             slight=event.modifiers() & QtCore.Qt.ControlModifier,
         )
 
-        self._render_high_res = False
-        self._low_res_timer.start(self.TIMEOUT)
+        self._interacting = True
+        self._interaction_timer.start(self.TIMEOUT)
         self._start_rendering()
         event.accept()

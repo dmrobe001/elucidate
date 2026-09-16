@@ -47,6 +47,10 @@ Unreleased
   primitive whichever side the ray struck, rather than one pre-flipped toward
   the ray. The tracers flip it to the viewing side for shading. Rendered
   output is unchanged for front faces.
+* ``interact.SceneView`` shows a ``Preview`` render whenever sampling restarts
+  (moving the camera or resizing the window) and replaces it with the path
+  traced image once a few samples have accumulated. It no longer renders a
+  quarter resolution path traced image while the camera moves.
 
 *Fixed*
 
