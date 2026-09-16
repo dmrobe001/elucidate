@@ -36,6 +36,20 @@ const unsigned int rng_val_mis = 0x8754abcd;
 //! Counter for ray termination (Russian roulette)
 const unsigned int rng_val_rr = 0x54abf853;
 
+//! Hard cap on path depth
+/*! Russian roulette alone does not bound a path's length: a lossless dielectric (spec_trans close
+    to 1, little or no absorption) keeps the attenuation near 1, so p_continue stays near 1 and a
+    path can keep bouncing - most persistently via repeated total internal reflection inside a
+    rough transmissive surface at grazing angles - for a very large number of iterations before
+    roulette happens to kill it. On the CPU that only slows the one thread computing that pixel.
+    On the GPU, a single such path stalls the entire kernel launch until it finishes, since a
+    launch cannot return before its slowest thread does; on a display-driving (WDDM) GPU that can
+    exceed the driver's hang-detection timeout and take down the whole session. This cap is high
+    enough that Russian roulette terminates the overwhelming majority of paths well before it is
+    reached, so it is not expected to be visible in any rendered image.
+*/
+const unsigned int max_path_depth = 64;
+
 //! Ray generation methods
 /*! Common code to generate rays on the host and device.
  */
@@ -228,6 +242,9 @@ class RayGen
     DEVICE bool
     shouldTerminatePath(RGB<float>& attenuation, unsigned int depth, unsigned int sample) const
         {
+        if (depth >= max_path_depth)
+            return true;
+
         r123::Philox4x32 rng;
         r123::Philox4x32::ctr_type rng_counter = {{0, depth, sample, rng_val_rr}};
         r123::Philox4x32::ctr_type rng_u = rng(rng_counter, m_rng_key);

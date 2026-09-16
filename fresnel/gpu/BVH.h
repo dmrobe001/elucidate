@@ -137,7 +137,16 @@ DEVICE inline HitInfo bvh_intersect(const BVHView& bvh,
     unsigned int stack_size = 0;
     int node_index = 0;
 
-    while (true)
+    // A correctly formed tree visits at most ~2 * (2 * n_prims - 1) nodes: each internal node is
+    // descended into once and, when both children are hit, pushed and popped once. This bound
+    // exists only to keep a corrupted or inconsistent tree (e.g. a torn read of a node still being
+    // written by the concurrent bottom-up refit in BVH.cu) from turning into a kernel that never
+    // returns: on the GPU, that hangs the whole launch and can trigger a driver timeout (TDR),
+    // which resets the device out from under every other process using it.
+    const unsigned int max_steps = 8 * bvh.n_prims + 64;
+    unsigned int steps = 0;
+
+    while (steps++ < max_steps)
         {
         const BVHNode node = bvh.nodes[node_index];
 
