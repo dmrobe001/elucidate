@@ -6,6 +6,10 @@
 
 #include "BVH.h"
 
+#if defined(_MSC_VER) && !defined(__CUDA_ARCH__)
+#include <intrin.h>
+#endif
+
 /*! \file BVHBuild.h
     \brief The per-thread steps of the linear BVH build.
 
@@ -33,6 +37,9 @@ DEVICE inline int clz32(unsigned int v)
     {
 #ifdef __CUDA_ARCH__
     return __clz((int)v);
+#elif defined(_MSC_VER)
+    unsigned long index;
+    return _BitScanReverse(&index, v) ? (31 - (int)index) : 32;
 #else
     return (v == 0) ? 32 : __builtin_clz(v);
 #endif

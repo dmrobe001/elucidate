@@ -122,6 +122,12 @@ endif()
 
 if (WIN32)
 target_compile_definitions(_gpu PUBLIC _USE_MATH_DEFINES NOMINMAX R123_NO_SINCOS)
+
+# nvccfeatures.h hardcodes R123_USE_MULHILO64_ASM=1 for the host-side compile pass on the
+# assumption that nvcc always falls through to gcc; on Windows it falls through to MSVC, which
+# cannot compile GNU inline asm. Leaving the macro undefined here lets msvcfeatures.h's own
+# MSVC_INTRIN selection take effect instead.
+target_compile_definitions(_gpu PUBLIC R123_USE_MULHILO64_ASM=0)
 endif()
 
 install(TARGETS _gpu LIBRARY DESTINATION ${PYTHON_SITE_INSTALL_DIR})
