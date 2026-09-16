@@ -57,6 +57,10 @@ Unreleased
 * ``tracer.Preview`` renders a transmissive material as transparent rather
   than as opaque. Scenes that set ``spec_trans`` preview differently; opaque
   scenes are unchanged.
+* ``interact.SceneView`` shows a ``Preview`` render whenever sampling restarts
+  (moving the camera or resizing the window) and replaces it with the path
+  traced image once a few samples have accumulated. It no longer renders a
+  quarter resolution path traced image while the camera moves.
 
 *Fixed*
 
