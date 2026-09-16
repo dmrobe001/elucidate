@@ -14,6 +14,7 @@ set(files conftest.py
           test_light.py
           test_material.py
           test_outline_material.py
+          test_preview_transmission.py
           test_refraction.py
           test_rough_transmission.py
           test_scene.py

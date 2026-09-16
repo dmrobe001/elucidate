@@ -30,6 +30,13 @@ Unreleased
 * The background shows through transmissive materials and in mirror
   reflections. It remains a backdrop rather than an environment light, so it
   does not light diffuse surfaces and opaque scenes render unchanged.
+* ``tracer.Preview`` sees through transmissive materials. A surface with
+  ``spec_trans`` above 0 is traced through rather than shaded, bending by
+  ``ior`` and tinting by ``color`` at each interface it crosses, and it no
+  longer covers the background alpha. The preview keeps its one shading sample
+  per hit, so it does not reflect off the interface, frost it with
+  ``roughness``, transmit partially, or absorb over
+  ``transmission_distance``; use ``tracer.Path`` for those.
 
 *Changed*
 
@@ -47,6 +54,9 @@ Unreleased
   primitive whichever side the ray struck, rather than one pre-flipped toward
   the ray. The tracers flip it to the viewing side for shading. Rendered
   output is unchanged for front faces.
+* ``tracer.Preview`` renders a transmissive material as transparent rather
+  than as opaque. Scenes that set ``spec_trans`` preview differently; opaque
+  scenes are unchanged.
 
 *Fixed*
 

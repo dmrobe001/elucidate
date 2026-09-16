@@ -3,6 +3,7 @@
 
 #include "TracerDirect.h"
 #include "common/RayGen.h"
+#include "common/TracerDirectMethods.h"
 #include <cmath>
 #include <stdexcept>
 
@@ -85,43 +86,56 @@ void TracerDirect::renderImplementation(std::shared_ptr<Scene> scene)
 
                         for (unsigned int sample = 0; sample < m_aa_n * m_aa_n; sample++)
                             {
-                            // trace a ray into the scene
-                            RTCRayHit ray_hit;
-                            RTCRay& ray = ray_hit.ray;
                             vec3<float> org, dir;
                             cam.generateRay(org, dir, i, j, sample);
-                            ray.org_x = org.x;
-                            ray.org_y = org.y;
-                            ray.org_z = org.z;
 
-                            ray.dir_x = dir.x;
-                            ray.dir_y = dir.y;
-                            ray.dir_z = dir.z;
-
-                            ray.tnear = 0.0f;
-                            ray.tfar = std::numeric_limits<float>::infinity();
-                            ray.time = 0.0f;
-                            ray.flags = 0;
-                            ray.mask = -1;
-                            ray_hit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
-                            ray_hit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
-
-                            FresnelRTCIntersectContext context;
-                            rtcInitRayQueryContext(&context.context);
-
-                            RTCIntersectArguments args;
-                            rtcInitIntersectArguments(&args);
-                            args.flags = RTC_RAY_QUERY_FLAG_COHERENT;
-                            args.context = &context.context;
-
-                            rtcIntersect1(scene->getRTCScene(), &ray_hit, &args);
-
-                            // determine the output pixel color
+                            // A transparent surface is seen through rather than shaded, so
+                            // follow the ray across as many interfaces as it takes to reach
+                            // something opaque or the background, tinting it at each one.
+                            RGB<float> tint(1.0f, 1.0f, 1.0f);
                             RGB<float> c = background_color;
                             float a = background_alpha;
 
-                            if (ray_hit.hit.geomID != RTC_INVALID_GEOMETRY_ID)
+                            for (unsigned int crossing = 0;; crossing++)
                                 {
+                                // trace a ray into the scene
+                                RTCRayHit ray_hit;
+                                RTCRay& ray = ray_hit.ray;
+                                ray.org_x = org.x;
+                                ray.org_y = org.y;
+                                ray.org_z = org.z;
+
+                                ray.dir_x = dir.x;
+                                ray.dir_y = dir.y;
+                                ray.dir_z = dir.z;
+
+                                // a continuation ray starts just off the surface it left, so
+                                // that the same surface is not hit again at t = 0
+                                ray.tnear = (crossing == 0) ? 0.0f : 1e-3f;
+                                ray.tfar = std::numeric_limits<float>::infinity();
+                                ray.time = 0.0f;
+                                ray.flags = 0;
+                                ray.mask = -1;
+                                ray_hit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
+                                ray_hit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
+
+                                FresnelRTCIntersectContext context;
+                                rtcInitRayQueryContext(&context.context);
+
+                                RTCIntersectArguments args;
+                                rtcInitIntersectArguments(&args);
+                                // refracted rays fan out, the camera rays do not
+                                args.flags = (crossing == 0) ? RTC_RAY_QUERY_FLAG_COHERENT
+                                                             : RTC_RAY_QUERY_FLAG_INCOHERENT;
+                                args.context = &context.context;
+
+                                rtcIntersect1(scene->getRTCScene(), &ray_hit, &args);
+
+                                // nothing is behind the background, so a miss ends the ray on
+                                // the background color and alpha it started with
+                                if (ray_hit.hit.geomID == RTC_INVALID_GEOMETRY_ID)
+                                    break;
+
                                 vec3<float> n(ray_hit.hit.Ng_x, ray_hit.hit.Ng_y, ray_hit.hit.Ng_z);
                                 n /= std::sqrt(dot(n, n));
                                 vec3<float> v = -dir / std::sqrt(dot(dir, dir));
@@ -129,8 +143,10 @@ void TracerDirect::renderImplementation(std::shared_ptr<Scene> scene)
                                 // Geometry reports the geometric normal, which points out of
                                 // the primitive whichever side the ray struck. Flip it to the
                                 // side the ray arrived from so that back faces shade instead of
-                                // going black.
-                                if (dot(n, v) < 0.0f)
+                                // going black, and keep which face was hit: that is what tells
+                                // an entry from an exit at a refracting interface.
+                                const bool backfacing = (dot(n, v) < 0.0f);
+                                if (backfacing)
                                     {
                                     n = -n;
                                     }
@@ -144,74 +160,28 @@ void TracerDirect::renderImplementation(std::shared_ptr<Scene> scene)
                                 else
                                     m = scene->getOutlineMaterial(ray_hit.hit.geomID);
 
-                                if (m.isSolid())
+                                if (direct_tracer_is_transparent(m)
+                                    && crossing < direct_tracer_max_crossings)
                                     {
-                                    c = m.getColor(context.shading_color);
-                                    }
-                                else
-                                    {
-                                    c = RGB<float>(0, 0, 0);
-                                    for (unsigned int light_id = 0; light_id < lights.N; light_id++)
-                                        {
-                                        vec3<float> l = lights.direction[light_id];
-
-                                        // find the representative point, a vector pointing
-                                        // to the a point on the area light with a smallest
-                                        // angle to the reflection vector
-                                        vec3<float> r = -v + (2.0f * n * dot(n, v));
-
-                                        // find the closest point on the area light
-                                        float half_angle = lights.theta[light_id];
-                                        float cos_half_angle = cosf(half_angle);
-                                        float ldotr = dot(l, r);
-                                        if (ldotr < cos_half_angle)
-                                            {
-                                            vec3<float> a = cross(l, r);
-                                            a = a / sqrtf(dot(a, a));
-
-                                            // miss the light, need to rotate r by the
-                                            // difference in the angles about l cross r
-                                            quat<float> q = quat<float>::fromAxisAngle(
-                                                a,
-                                                -acosf(ldotr) + half_angle);
-                                            r = rotate(q, r);
-                                            }
-                                        else
-                                            {
-                                            // hit the light, no modification necessary to r
-                                            }
-
-                                        // only apply brdf when the light faces the surface
-                                        RGB<float> f_d;
-                                        float ndotl = dot(n, l);
-                                        if (ndotl >= 0.0f)
-                                            f_d = m.brdf_diffuse(l, v, n, context.shading_color)
-                                                  * ndotl;
-                                        else
-                                            f_d = RGB<float>(0.0f, 0.0f, 0.0f);
-
-                                        RGB<float> f_s;
-                                        if (dot(n, r) >= 0.0f)
-                                            {
-                                            f_s = m.brdf_specular(r,
-                                                                  v,
-                                                                  n,
-                                                                  context.shading_color,
-                                                                  half_angle)
-                                                  * dot(n, r);
-                                            }
-                                        else
-                                            f_s = RGB<float>(0.0f, 0.0f, 0.0f);
-
-                                        c += (f_d + f_s) * float(M_PI) * lights.color[light_id];
-                                        }
+                                    const vec3<float> hit_point = org + dir * ray.tfar;
+                                    direct_tracer_transmit(dir,
+                                                           tint,
+                                                           m,
+                                                           context.shading_color,
+                                                           n,
+                                                           v,
+                                                           backfacing);
+                                    org = hit_point;
+                                    continue;
                                     }
 
-                                a = 1.0;
+                                c = direct_tracer_shade(m, context.shading_color, n, v, lights);
+                                a = 1.0f;
+                                break;
                                 }
 
                             // accumulate importance sampled average
-                            output_avg += RGBA<float>(c, a);
+                            output_avg += RGBA<float>(c * tint, a);
                             } // end loop over AA samples
 
                         // write the output pixel

@@ -153,7 +153,20 @@ class Preview(Tracer):
     The `Preview` tracer produces a preview of the scene quickly. It
     approximates the effect of light on materials. The output of the `Preview`
     tracer will look very similar to that from the `Path` tracer, but will miss
-    soft shadows, reflection, transmittance, depth of field and other effects.
+    soft shadows, reflection, depth of field and other effects.
+
+    .. rubric:: Transmission
+
+    A material with `spec_trans <material.Material.spec_trans>` above 0 is seen
+    through rather than shaded, refracting by
+    `ior <material.Material.ior>` and picking up
+    `color <material.Material.color>` once per interface the ray crosses. That
+    is a cheaper reading of the material than the `Path` tracer's: there is no
+    reflection off the interface, no frosting from
+    `roughness <material.Material.roughness>`, no partial transmission, and no
+    absorption over `transmission_distance
+    <material.Material.transmission_distance>`. Use the `Path` tracer for the
+    appearance of the material itself; the preview shows what is behind it.
 
     .. rubric:: Anti-aliasing
 

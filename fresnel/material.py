@@ -24,15 +24,16 @@ class Material(object):
             value in the range [0, 1] to mix the two colors.
 
         roughness (float): Roughness of the material. Nominally in the range
-            [0.1, 1]. Roughness applies to transmission as well as reflection,
-            so a transmissive material frosts as it roughens. Set to 0 for a
-            clear interface.
+            [0.1, 1]. Roughness applies to transmission as well as reflection
+            in `tracer.Path`, so a transmissive material frosts as it roughens.
+            Set to 0 for a clear interface.
 
         specular (float): Control the strength of the specular highlights.
             Nominally in the range [0, 1].
 
         spec_trans (float): Control the amount of specular light transmission.
-            In the range [0, 1].
+            In the range [0, 1]. `tracer.Preview` treats any value above 0 as
+            fully transmissive.
 
         ior (float): Index of refraction of the material's interior. 1.5 is
             typical for glass and 1.333 for water. Set to 1 to transmit light
@@ -42,7 +43,7 @@ class Material(object):
             transmissive material absorbs light down to `color`. Twice this
             distance squares the color, so thick parts of a solid render deeper
             in color than thin ones. Raise it towards infinity for a material
-            that absorbs nothing.
+            that absorbs nothing. Applies to `tracer.Path` only.
 
         metal (float): Set to 0 for dielectric material, or 1 for metal.
             Intermediate values interpolate between the two.
@@ -57,9 +58,17 @@ class Material(object):
         convert standard sRGB colors into this space.
 
     Note:
-        `spec_trans` and `ior` apply only to `tracer.Path`. `tracer.Preview`
-        shades each hit directly against the lights and traces no secondary
-        rays, so it renders transmissive materials as opaque.
+        Both tracers see through a transmissive material, but they disagree on
+        what it looks like. `tracer.Path` weighs the dielectric interface
+        against the opaque lobe with `spec_trans`, reflects or refracts by the
+        Fresnel reflectance, frosts the interface with `roughness`, and takes
+        the color from Beer-Lambert absorption over `transmission_distance` of
+        the interior. `tracer.Preview` shades one hit against the lights and
+        cannot split a single sample between lobes, so it reads any
+        `spec_trans` above 0 as fully transparent, uses a smooth interface
+        whatever the `roughness`, does not reflect off it, and applies `color`
+        once per interface the ray crosses instead of absorbing over a
+        distance. `ior` bends light the same way in both.
 
     Note:
         Refraction and absorption assume that a transmissive surface separates
