@@ -138,6 +138,12 @@ DEVICE inline void path_tracer_hit(PRDpath& prd,
         prd.attenuation *= _material.absorption(_shading_color, _t_hit);
         }
 
+    // An emissive surface adds its own radiance to the path and then goes on scattering, so
+    // it can emit and still be diffuse, glossy or transmissive. This comes after the
+    // absorption above: emission from the far wall of a solid is seen through its interior.
+    // It is two sided, since a surface that glows has no side that does not.
+    prd.result += prd.attenuation * m.emission;
+
     if (m.isSolid())
         {
         // testing: treat solid colors as emitters

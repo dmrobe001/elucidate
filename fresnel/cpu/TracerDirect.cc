@@ -93,6 +93,7 @@ void TracerDirect::renderImplementation(std::shared_ptr<Scene> scene)
                             // follow the ray across as many interfaces as it takes to reach
                             // something opaque or the background, tinting it at each one.
                             RGB<float> tint(1.0f, 1.0f, 1.0f);
+                            RGB<float> emitted(0.0f, 0.0f, 0.0f);
                             RGB<float> c = background_color;
                             float a = background_alpha;
 
@@ -166,6 +167,7 @@ void TracerDirect::renderImplementation(std::shared_ptr<Scene> scene)
                                     const vec3<float> hit_point = org + dir * ray.tfar;
                                     direct_tracer_transmit(dir,
                                                            tint,
+                                                           emitted,
                                                            m,
                                                            context.shading_color,
                                                            n,
@@ -180,8 +182,10 @@ void TracerDirect::renderImplementation(std::shared_ptr<Scene> scene)
                                 break;
                                 }
 
-                            // accumulate importance sampled average
-                            output_avg += RGBA<float>(c * tint, a);
+                            // accumulate importance sampled average. Light gathered at an
+                            // emissive interface on the way here is already scaled by the
+                            // tint that stood in front of it, so it adds rather than scales.
+                            output_avg += RGBA<float>(c * tint + emitted, a);
                             } // end loop over AA samples
 
                         // write the output pixel

@@ -168,6 +168,13 @@ class Preview(Tracer):
     <material.Material.transmission_distance>`. Use the `Path` tracer for the
     appearance of the material itself; the preview shows what is behind it.
 
+    .. rubric:: Emission
+
+    A material with a non-zero `emission <material.Material.emission>` glows in
+    the preview as it does in a path trace. The light it casts on the rest of
+    the scene does not appear: that takes a scattered ray, and the `Preview`
+    tracer traces none.
+
     .. rubric:: Anti-aliasing
 
     The default value of `anti_alias` is True to smooth sharp edges in

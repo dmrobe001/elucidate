@@ -37,6 +37,13 @@ Unreleased
   per hit, so it does not reflect off the interface, frost it with
   ``roughness``, transmit partially, or absorb over
   ``transmission_distance``; use ``tracer.Path`` for those.
+* ``Material.emission``, the radiance a surface gives off on its own. It is a
+  color independent of ``color`` and the lights, it is not confined to [0, 1],
+  and it emits from both faces. ``tracer.Path`` casts the emitted light onto
+  the rest of the scene, finding an emitter by tracing a path that hits it, as
+  it already does for ``light.Light``. ``tracer.Preview`` shows an emissive
+  surface glowing, including one seen through glass, but not the light it
+  casts on anything else.
 
 *Changed*
 

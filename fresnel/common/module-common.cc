@@ -61,6 +61,7 @@ PYBIND11_MODULE(_common, m)
         .def_readwrite("transmission_distance", &Material::transmission_distance)
         .def_readwrite("metal", &Material::metal)
         .def_readwrite("color", &Material::color)
+        .def_readwrite("emission", &Material::emission)
         .def("__repr__",
              [](const Material& a)
              {
@@ -71,7 +72,8 @@ PYBIND11_MODULE(_common, m)
                    << " roughness=" << a.roughness << " specular=" << a.specular
                    << " spec_trans=" << a.spec_trans << " ior=" << a.ior
                    << " transmission_distance=" << a.transmission_distance << " metal=" << a.metal
-                   << ">";
+                   << " emission=(" << a.emission.r << ", " << a.emission.g << ", " << a.emission.b
+                   << ")" << ">";
 
                  return s.str();
              });
