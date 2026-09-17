@@ -81,6 +81,10 @@ The consequence to keep in mind is that `Preview` and `Path` agree on *what is s
 and on *where it bends light to*, and deliberately disagree on the depth of its color. This
 is documented on `Material` and on `tracer.Preview`, and is not a bug.
 
+`emission` divides them the same way. Both show an emissive surface glowing, at the same
+radiance, but only `Path` shows the light it casts on anything else, because that takes a
+scattered ray.
+
 The per-hit body of the direct tracer lives in `common/TracerDirectMethods.h`, which is to
 `Preview` what `common/TracerPathMethods.h` is to `Path`. Only the traversal around it —
 `rtcIntersect1()` on the CPU, `bvh_intersect()` on the GPU — belongs to a backend, so a change
@@ -115,6 +119,15 @@ the weights will be wrong.
 Colour in a transmissive material comes from Beer-Lambert absorption along the path inside it,
 applied on arriving at a back face, not from tinting each surface crossing. `roughness` drives
 transmission as well as reflection.
+
+`emission` is added at a hit and is the one term that does not go through a lobe: it does not
+depend on the lights, the view direction or the BRDF, and the surface goes on scattering after
+it. Both tracers add it, both add it on either face, and neither clamps it. In the path tracer
+it lands after the Beer-Lambert absorption of the segment just travelled, so the far wall of an
+emissive solid is seen through that solid's interior. There is no next event estimation here,
+so an emissive surface lights the scene only by being hit - the same way `light.Light` already
+works, which is why emission needed no new sampling machinery and left every reference image
+alone.
 
 `Material::alphaGGX()` floors the GGX roughness for the **opaque** lobe only. The distribution
 is 0/0 as alpha goes to zero at normal incidence, and the NaN spreads through the image. The

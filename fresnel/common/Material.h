@@ -168,19 +168,28 @@ struct Material
     float spec_trans; //!< Set to 0 for solid materials, 1 for fully transmissive
     float ior; //!< Index of refraction of the material's interior
     float transmission_distance; //!< Distance over which the interior absorbs down to `color`
+    //! Radiance the surface emits on its own, black for a material that does not emit
+    /*! Emission is the material's own color rather than a tint of \a color, so a surface can
+        glow a different color than it reflects; it ignores \a primitive_color_mix and the
+        geometry color for the same reason. It is a radiance rather than a reflectance, so it
+        is not confined to [0, 1]: a value above 1 is an emitter bright enough to bleach out,
+        which is what the tracers' highlight warning flags.
+    */
+    RGB<float> emission;
 
     //! Default constructor gives a plain dielectric material
     DEVICE Material()
         : solid(0.0f), color(RGB<float>(0.9f, 0.9f, 0.9f)), primitive_color_mix(0.0f),
           roughness(0.1f), specular(0.5f), metal(0.0f), spec_trans(0.0f), ior(1.5f),
-          transmission_distance(1.0f)
+          transmission_distance(1.0f), emission(RGB<float>(0.0f, 0.0f, 0.0f))
         {
         }
 
     //! Set material parameters
     DEVICE explicit Material(const RGB<float> _color, float _solid = 0.0f)
         : solid(_solid), color(_color), primitive_color_mix(0.0f), roughness(0.1f), specular(0.5f),
-          metal(0.0f), spec_trans(0.0f), ior(1.5f), transmission_distance(1.0f)
+          metal(0.0f), spec_trans(0.0f), ior(1.5f), transmission_distance(1.0f),
+          emission(RGB<float>(0.0f, 0.0f, 0.0f))
         {
         }
 

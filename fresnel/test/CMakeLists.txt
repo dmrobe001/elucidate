@@ -5,6 +5,7 @@ set(files conftest.py
           test_camera_orthographic.py
           test_camera_perspective.py
           test_device.py
+          test_emission.py
           test_geometry_box.py
           test_geometry_convex_polyhedron.py
           test_geometry_cylinder.py

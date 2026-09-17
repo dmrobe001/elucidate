@@ -58,6 +58,7 @@ DEVICE inline bool direct_tracer_is_transparent(const Material& m)
 //! Continue a ray through a transparent surface
 /*! \param direction [output] Direction to continue the ray with
     \param tint [in,out] Color the pixel is multiplied by, scaled on getting through the surface
+    \param emitted [in,out] Light gathered along the ray so far, added to by an emissive surface
     \param m Material at the hit
     \param shading_color Color of the primitive
     \param n Normal, already flipped to the side the ray arrived from
@@ -76,15 +77,24 @@ DEVICE inline bool direct_tracer_is_transparent(const Material& m)
     see-through and on how they bend light, but not on the depth of the color - a closed solid
     picks up its color twice here, on the way in and on the way out. A ray turned back by
     total internal reflection never crossed the boundary, so it picks up nothing.
+
+    An emissive transparent surface glows and is still seen through. Its emission is gathered
+    into \a emitted rather than into \a tint, because it adds light instead of filtering it,
+    and it is scaled by the tint of the interfaces already between it and the camera. Total
+    internal reflection is no exception here: a surface that glows glows whether or not this
+    particular ray got through it.
 */
 DEVICE inline void direct_tracer_transmit(vec3<float>& direction,
                                           RGB<float>& tint,
+                                          RGB<float>& emitted,
                                           const Material& m,
                                           const RGB<float>& shading_color,
                                           const vec3<float>& n,
                                           const vec3<float>& v,
                                           bool backfacing)
     {
+    emitted += tint * m.emission;
+
     // A ray on its way out of the material meets the same interface from the dense side, so
     // the two indices swap.
     const float eta_i = backfacing ? m.ior : 1.0f;
@@ -115,6 +125,11 @@ DEVICE inline void direct_tracer_transmit(vec3<float>& direction,
 
     No secondary rays and no shadow rays: each light is reduced to the point on it closest to
     the mirror direction and the material's BRDF is evaluated there.
+
+    An emissive material adds its radiance on top of whatever the lights do to it, so an
+    emitter reads in the preview as it does in the path trace. What the preview cannot show is
+    the light that emitter casts on anything else: that takes a scattered ray, and the preview
+    traces none.
 */
 DEVICE inline RGB<float> direct_tracer_shade(const Material& m,
                                              const RGB<float>& shading_color,
@@ -124,10 +139,10 @@ DEVICE inline RGB<float> direct_tracer_shade(const Material& m,
     {
     if (m.isSolid())
         {
-        return m.getColor(shading_color);
+        return m.getColor(shading_color) + m.emission;
         }
 
-    RGB<float> c(0, 0, 0);
+    RGB<float> c = m.emission;
     for (unsigned int light_id = 0; light_id < lights.N; light_id++)
         {
         vec3<float> l = lights.direction[light_id];

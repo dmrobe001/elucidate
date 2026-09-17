@@ -48,6 +48,10 @@ class Material(object):
         metal (float): Set to 0 for dielectric material, or 1 for metal.
             Intermediate values interpolate between the two.
 
+        emission ((3, ) `numpy.ndarray` of ``float32``)): Linear color of the
+            light the material emits. Leave at 0 for a material that does not
+            glow.
+
     See Also:
         Tutorials:
 
@@ -71,6 +75,16 @@ class Material(object):
         distance. `ior` bends light the same way in both.
 
     Note:
+        `emission` is a radiance rather than a reflectance, so it is not
+        confined to the range [0, 1]: values above 1 make an emitter bright
+        enough to bleach out, which `tracer.Tracer.highlight_warning` flags.
+        `tracer.Path` casts the emitted light onto the rest of the scene. It
+        finds an emissive surface only by tracing a path that hits it, so a
+        small, bright emitter needs more samples than a large, dim one.
+        `tracer.Preview` traces no scattered rays, so it shows an emissive
+        surface glowing but not the light it casts on anything else.
+
+    Note:
         Refraction and absorption assume that a transmissive surface separates
         the material's interior from air and that the geometry enclosing it is
         closed.
@@ -90,6 +104,7 @@ class Material(object):
         ior=1.5,
         transmission_distance=1.0,
         metal=0,
+        emission=(0, 0, 0),
     ):
         self._material = _common.Material()
 
@@ -101,6 +116,7 @@ class Material(object):
         self.spec_trans = spec_trans
         self.ior = ior
         self.transmission_distance = transmission_distance
+        self.emission = emission
         self.primitive_color_mix = primitive_color_mix
 
     @property
@@ -144,6 +160,27 @@ class Material(object):
         if len(value) != 3:
             raise ValueError("colors must have length 3")
         self._material.color = _common.RGBf(*value)
+
+    @property
+    def emission(self):
+        """((3, ) `numpy.ndarray` of ``float32``)): Linear emitted color.
+
+        The light the material gives off on its own, independent of `color`,
+        `primitive_color_mix` and the lights in the scene. Leave at 0 for a
+        material that does not glow. Values above 1 are meaningful: this is a
+        radiance, not a reflectance.
+        """
+        return (
+            self._material.emission.r,
+            self._material.emission.g,
+            self._material.emission.b,
+        )
+
+    @emission.setter
+    def emission(self, value):
+        if len(value) != 3:
+            raise ValueError("colors must have length 3")
+        self._material.emission = _common.RGBf(*value)
 
     @property
     def roughness(self):
@@ -269,6 +306,27 @@ class _MaterialProxy(object):
         self._geometry.setMaterial(m)
 
     @property
+    def emission(self):
+        """((3, ) `numpy.ndarray` of ``float32``)): Linear emitted color.
+
+        The light the material gives off on its own, independent of `color`,
+        `primitive_color_mix` and the lights in the scene. Leave at 0 for a
+        material that does not glow. Values above 1 are meaningful: this is a
+        radiance, not a reflectance.
+        """
+        m = self._geometry.getMaterial()
+        return (m.emission.r, m.emission.g, m.emission.b)
+
+    @emission.setter
+    def emission(self, value):
+        if len(value) != 3:
+            raise ValueError("colors must have length 3")
+
+        m = self._geometry.getMaterial()
+        m.emission = _common.RGBf(*value)
+        self._geometry.setMaterial(m)
+
+    @property
     def roughness(self):
         m = self._geometry.getMaterial()
         return m.roughness
@@ -389,6 +447,27 @@ class _OutlineMaterialProxy(object):
 
         m = self._geometry.getOutlineMaterial()
         m.color = _common.RGBf(*value)
+        self._geometry.setOutlineMaterial(m)
+
+    @property
+    def emission(self):
+        """((3, ) `numpy.ndarray` of ``float32``)): Linear emitted color.
+
+        The light the material gives off on its own, independent of `color`,
+        `primitive_color_mix` and the lights in the scene. Leave at 0 for a
+        material that does not glow. Values above 1 are meaningful: this is a
+        radiance, not a reflectance.
+        """
+        m = self._geometry.getOutlineMaterial()
+        return (m.emission.r, m.emission.g, m.emission.b)
+
+    @emission.setter
+    def emission(self, value):
+        if len(value) != 3:
+            raise ValueError("colors must have length 3")
+
+        m = self._geometry.getOutlineMaterial()
+        m.emission = _common.RGBf(*value)
         self._geometry.setOutlineMaterial(m)
 
     @property

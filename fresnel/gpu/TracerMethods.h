@@ -79,6 +79,7 @@ DEVICE inline RGBA<float> trace_direct_pixel(const SceneView& scene,
         // as many interfaces as it takes to reach something opaque or the background, tinting
         // it at each one.
         RGB<float> tint(1.0f, 1.0f, 1.0f);
+        RGB<float> emitted(0.0f, 0.0f, 0.0f);
         RGB<float> c = background_color;
         float a = background_alpha;
 
@@ -122,7 +123,7 @@ DEVICE inline RGBA<float> trace_direct_pixel(const SceneView& scene,
             if (direct_tracer_is_transparent(m) && crossing < direct_tracer_max_crossings)
                 {
                 const vec3<float> hit_point = org + dir * hit.t;
-                direct_tracer_transmit(dir, tint, m, hit.shading_color, n, v, backfacing);
+                direct_tracer_transmit(dir, tint, emitted, m, hit.shading_color, n, v, backfacing);
                 org = hit_point;
                 continue;
                 }
@@ -132,8 +133,10 @@ DEVICE inline RGBA<float> trace_direct_pixel(const SceneView& scene,
             break;
             }
 
-        // accumulate importance sampled average
-        output_avg += RGBA<float>(c * tint, a);
+        // accumulate importance sampled average. Light gathered at an emissive interface on
+        // the way here is already scaled by the tint that stood in front of it, so it adds
+        // rather than scales.
+        output_avg += RGBA<float>(c * tint + emitted, a);
         } // end loop over AA samples
 
     return output_avg / float(aa_n * aa_n);
